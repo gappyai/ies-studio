@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, FileText, Folder, Plus, X } from 'lucide-react';
+import { Download, FileText, Folder } from 'lucide-react';
 import { useIESFileStore } from '../store/iesFileStore';
 import { iesGenerator } from '../services/iesGenerator';
 import JSZip from 'jszip';

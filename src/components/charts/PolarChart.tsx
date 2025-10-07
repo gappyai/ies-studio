@@ -133,7 +133,7 @@ export function PolarChart({ data, verticalAngles, horizontalAngles }: PolarChar
         color: 'rgba(170, 162, 105, 0.7)', label: 'C90-C270', strokeColor: '#aaa269' }
     ];
 
-    planesToPlot.forEach((plane, pIdx) => {
+    planesToPlot.forEach((plane) => {
       if (plane.hIndex < 0 || plane.hIndex >= data.length) return;
       
       const slice = data[plane.hIndex] || [];

@@ -10,7 +10,7 @@ export function IsoCandelaChart({ data, verticalAngles, horizontalAngles }: IsoC
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Calculate max intensity and contour levels
-  const { maxIntensity, contourLevels } = useMemo(() => {
+  const { contourLevels } = useMemo(() => {
     let max = 0;
     data.forEach(slice => {
       slice.forEach(val => {
@@ -58,7 +58,7 @@ export function IsoCandelaChart({ data, verticalAngles, horizontalAngles }: IsoC
     const radiusSteps = 10;
 
     // Draw contour fills
-    contourLevels.forEach((level, levelIdx) => {
+    contourLevels.forEach((level) => {
       ctx.beginPath();
       let firstPoint = true;
       

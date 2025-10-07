@@ -10,7 +10,7 @@ export function IsoIlluminanceChart({ data, verticalAngles, horizontalAngles }: 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Calculate illuminance levels (simplified - would need mounting height in real calculation)
-  const { maxValue, levels } = useMemo(() => {
+  const { levels } = useMemo(() => {
     let max = 0;
     data.forEach(slice => {
       slice.forEach(val => {
@@ -92,7 +92,7 @@ export function IsoIlluminanceChart({ data, verticalAngles, horizontalAngles }: 
     const centerY = startY + (gridSize * cellSize) / 2;
     
     // Draw multiple concentric circles for illuminance contours
-    levels.forEach((level, idx) => {
+    levels.forEach((level) => {
       const radius = cellSize * gridSize * (level.percentage / 200);
       ctx.beginPath();
       ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);

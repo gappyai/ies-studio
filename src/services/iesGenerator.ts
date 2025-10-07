@@ -1,4 +1,4 @@
-import type { IESFile, IESMetadata, PhotometricData } from '../types/ies.types';
+import type { IESFile } from '../types/ies.types';
 
 export class IESGenerator {
   generate(file: IESFile): string {

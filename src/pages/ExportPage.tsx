@@ -25,11 +25,6 @@ export function ExportPage() {
     saveAs(blob, filename);
   };
 
-  const handleDownloadOriginal = () => {
-    const blob = new Blob([currentFile.rawContent], { type: 'text/plain;charset=utf-8' });
-    saveAs(blob, currentFile.fileName);
-  };
-
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(iesContent);
