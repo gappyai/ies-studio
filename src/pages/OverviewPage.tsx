@@ -1,6 +1,4 @@
 import { useIESFileStore } from '../store/iesFileStore';
-import { PolarChart } from '../components/charts/PolarChart';
-import { LinearChart } from '../components/charts/LinearChart';
 
 export function OverviewPage() {
   const { currentFile, calculatedProperties } = useIESFileStore();
@@ -17,6 +15,7 @@ export function OverviewPage() {
     <div className="p-8">
       <h1 className="text-3xl font-bold text-gray-900 mb-6">Overview</h1>
       
+      {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-sm">
           <h3 className="text-sm font-medium text-gray-500 mb-1">File Name</h3>
@@ -59,8 +58,9 @@ export function OverviewPage() {
         </div>
       </div>
 
+      {/* Test Information */}
       <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Metadata</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Test Information</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <div>
             <p className="text-sm text-gray-500">Test</p>
@@ -86,6 +86,13 @@ export function OverviewPage() {
             <p className="text-sm text-gray-500">Other</p>
             <p className="font-medium text-gray-900">{currentFile.metadata.other || 'N/A'}</p>
           </div>
+        </div>
+      </div>
+
+      {/* Luminaire Information */}
+      <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Luminaire Information</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <div>
             <p className="text-sm text-gray-500">Manufacturer</p>
             <p className="font-medium text-gray-900">{currentFile.metadata.manufacturer || 'N/A'}</p>
@@ -121,47 +128,98 @@ export function OverviewPage() {
         </div>
       </div>
 
+      {/* Photometric Data */}
       <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Technical Details</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Photometric Data</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <p className="text-sm text-gray-500">Number of Lamps</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.numberOfLamps}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Lumens Per Lamp</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.lumensPerLamp.toFixed(1)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Multiplier</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.multiplier}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Tilt</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.tiltOfLuminaire}°</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Photometric Type</p>
+            <p className="font-medium text-gray-900">
+              {currentFile.photometricData.photometricType === 1 ? 'Type C' : 
+               currentFile.photometricData.photometricType === 2 ? 'Type B' : 'Type A'}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Units</p>
+            <p className="font-medium text-gray-900">
+              {currentFile.photometricData.unitsType === 1 ? 'Feet' : 'Meters'}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Vertical Angles</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.numberOfVerticalAngles}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Horizontal Angles</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.numberOfHorizontalAngles}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Ballast Factor</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.ballastFactor}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Ballast-Lamp Factor</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.ballastLampPhotometricFactor}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Dimensions */}
+      <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Luminous Dimensions</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div>
+            <p className="text-sm text-gray-500">Width</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.width} m</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Length</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.length} m</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Height</p>
+            <p className="font-medium text-gray-900">{currentFile.photometricData.height} m</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Calculated Properties */}
+      <div className="bg-white p-6 rounded-lg shadow-sm">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Calculated Properties</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <p className="text-sm text-gray-500">Beam Angle</p>
             <p className="font-medium text-gray-900">{calculatedProperties?.beamAngle.toFixed(1)}°</p>
           </div>
           <div>
+            <p className="text-sm text-gray-500">Field Angle</p>
+            <p className="font-medium text-gray-900">{calculatedProperties?.fieldAngle.toFixed(1)}°</p>
+          </div>
+          <div>
             <p className="text-sm text-gray-500">LOR</p>
             <p className="font-medium text-gray-900">{calculatedProperties?.lor}%</p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Luminous Width</p>
-            <p className="font-medium text-gray-900">{currentFile.photometricData.width} m</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Luminous Length</p>
-            <p className="font-medium text-gray-900">{currentFile.photometricData.length} m</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Luminous Height</p>
-            <p className="font-medium text-gray-900">{currentFile.photometricData.height} m</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Input Watts</p>
-            <p className="font-medium text-gray-900">{currentFile.photometricData.inputWatts || 'N/A'} W</p>
+            <p className="text-sm text-gray-500">Center Beam Intensity</p>
+            <p className="font-medium text-gray-900">{calculatedProperties?.centerBeamIntensity.toFixed(2)} cd</p>
           </div>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <PolarChart
-          data={currentFile.photometricData.candelaValues}
-          verticalAngles={currentFile.photometricData.verticalAngles}
-          horizontalAngles={currentFile.photometricData.horizontalAngles}
-        />
-        <LinearChart
-          data={currentFile.photometricData.candelaValues}
-          verticalAngles={currentFile.photometricData.verticalAngles}
-          horizontalAngles={currentFile.photometricData.horizontalAngles}
-        />
       </div>
     </div>
   );

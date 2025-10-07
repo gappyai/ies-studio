@@ -1,4 +1,4 @@
-import { Home, Edit, Box, Grid, Download } from 'lucide-react';
+import { Home, Edit, Box, Grid, Download, BarChart3 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useIESFileStore } from '../../store/iesFileStore';
 
@@ -6,9 +6,10 @@ const navigationItems = [
   { path: '/', icon: Home, label: 'Home', exact: true },
   { path: '/overview', icon: Grid, label: 'Overview' },
   { path: '/edit', icon: Edit, label: 'Edit' },
-  { path: '/3d', icon: Box, label: '3D View' },
-  { path: '/batch', icon: Grid, label: 'Batch Generator' },
   { path: '/export', icon: Download, label: 'Export' },
+  { path: '/batch', icon: Grid, label: 'Batch Generator' },
+  { path: '/charts', icon: BarChart3, label: 'Charts' },
+  { path: '/3d', icon: Box, label: '3D View' },
 ];
 
 export function Sidebar() {
