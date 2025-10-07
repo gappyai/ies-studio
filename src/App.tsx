@@ -10,7 +10,7 @@ import { ExportPage } from './pages/ExportPage';
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/ies-studio">
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
