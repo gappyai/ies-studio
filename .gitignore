@@ -5,9 +5,12 @@
 /.pnp
 .pnp.js
 
+# vite
+.vite
+
 # testing
 /coverage
-
+/dist/*
 # next.js
 /.next/
 /out/
