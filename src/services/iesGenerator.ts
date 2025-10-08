@@ -72,15 +72,24 @@ export class IESGenerator {
       horizontalSlice => horizontalSlice.map(value => value * ratio)
     );
     
-    // Update dimensions if provided (only luminous dimensions now)
+    // Calculate wattage proportionally based on WIDTH change (width represents LED strip length)
+    if (dimensions?.width !== undefined && baseFile.photometricData.width > 0) {
+      const widthRatio = dimensions.width / baseFile.photometricData.width;
+      variant.photometricData.inputWatts = baseFile.photometricData.inputWatts * widthRatio;
+    }
+    
+    // Update dimensions in BOTH metadata and photometricData
     if (dimensions?.length !== undefined) {
       variant.metadata.luminousOpeningLength = dimensions.length;
+      variant.photometricData.length = dimensions.length;
     }
     if (dimensions?.width !== undefined) {
       variant.metadata.luminousOpeningWidth = dimensions.width;
+      variant.photometricData.width = dimensions.width;
     }
     if (dimensions?.height !== undefined) {
       variant.metadata.luminousOpeningHeight = dimensions.height;
+      variant.photometricData.height = dimensions.height;
     }
     
     // Update color temperature if provided
