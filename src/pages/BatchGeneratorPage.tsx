@@ -68,13 +68,16 @@ export function BatchGeneratorPage() {
       const zip = new JSZip();
       
       for (const variant of variants) {
+        // Convert length from mm to meters for IES file WIDTH field (width = LED strip length)
+        const lengthInMeters = variant.length / 1000;
+        
         const variantFile = iesGenerator.generateVariant(
           workingFile,
           workingFile.photometricData.totalLumens, // Keep original lumens
           {
-            length: variant.length,
-            width: workingFile.metadata.luminousOpeningWidth,
-            height: workingFile.metadata.luminousOpeningHeight
+            width: lengthInMeters,  // Width field represents LED strip length
+            length: workingFile.photometricData.length,
+            height: workingFile.photometricData.height
           },
           variant.name,
           variant.cct
