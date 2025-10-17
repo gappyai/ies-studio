@@ -1,6 +1,5 @@
-import { FileText, Box, Grid, Download, BarChart3, Settings, Upload } from 'lucide-react';
+import { FileText, Box, Grid, BarChart3, Settings } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
-import { useIESFileStore } from '../../store/iesFileStore';
 
 const navigationItems = [
   { path: '/', icon: FileText, label: 'File Editor', exact: true },
@@ -11,13 +10,10 @@ const navigationItems = [
 ];
 
 export function Sidebar() {
-  const currentFile = useIESFileStore((state) => state.currentFile);
-
   return (
     <aside className="w-20 bg-gray-800 flex flex-col items-center py-6 space-y-8">
       {navigationItems.map((item) => {
         const Icon = item.icon;
-        const isDisabled = !currentFile && !item.exact;
         
         return (
           <NavLink
@@ -25,9 +21,7 @@ export function Sidebar() {
             to={item.path}
             className={({ isActive }) =>
               `flex flex-col items-center space-y-1 w-16 py-3 rounded-lg transition-colors ${
-                isDisabled
-                  ? 'opacity-40 cursor-not-allowed pointer-events-none'
-                  : isActive
+                isActive
                   ? 'bg-primary text-white'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700'
               }`

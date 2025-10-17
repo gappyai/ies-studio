@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Download, FileText, Folder } from 'lucide-react';
+import { Download, FileText, Folder, Upload } from 'lucide-react';
 import { useIESFileStore } from '../store/iesFileStore';
 import { iesGenerator } from '../services/iesGenerator';
+import { iesParser } from '../services/iesParser';
 import { photometricCalculator } from '../services/calculator';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -20,7 +21,7 @@ interface VariantConfig {
 }
 
 export function BatchGeneratorPage() {
-  const { currentFile, editedData } = useIESFileStore();
+  const { currentFile, editedData, setCurrentFile, setCalculatedProperties } = useIESFileStore();
   const [ccts, setCcts] = useState<string>('2700,3000,4000,5000,6500');
   const [cctMultipliers, setCctMultipliers] = useState<string>('0.88,0.92,1.0,1.05,1.12');
   const [lengths, setLengths] = useState<string>('0.5,1.0,1.5,2.0');
@@ -31,11 +32,104 @@ export function BatchGeneratorPage() {
   const [generating, setGenerating] = useState(false);
   const [useCCTMultiplier, setUseCCTMultiplier] = useState(true);
   const [useWattageScaling, setUseWattageScaling] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFileUpload = async (file: File) => {
+    setError(null);
+    
+    if (!file.name.toLowerCase().endsWith('.ies')) {
+      setError('Please select a valid .ies file');
+      return;
+    }
+
+    try {
+      const content = await file.text();
+      const parsedFile = iesParser.parse(content, file.name, file.size);
+      const calculated = photometricCalculator.calculateProperties(parsedFile.photometricData);
+      
+      setCurrentFile(parsedFile);
+      setCalculatedProperties(calculated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to parse IES file');
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
 
   if (!currentFile) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">No file loaded</p>
+      <div className="p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">
+              Batch Generator
+            </h1>
+            <p className="text-xl text-gray-600 mb-8">
+              Generate multiple IES file variants organized by CCT and length
+            </p>
+            
+            {/* Primary File Selection Button */}
+            <div className="mb-8">
+              <label className="inline-block">
+                <input
+                  type="file"
+                  accept=".ies,.IES"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <span className="px-8 py-4 bg-primary text-white rounded-lg cursor-pointer hover:bg-blue-600 transition-colors inline-flex items-center gap-3 text-lg font-medium">
+                  <Upload className="w-6 h-6" />
+                  Select Base IES File
+                </span>
+              </label>
+            </div>
+
+            {/* Drag and Drop Area */}
+            <div
+              className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors max-w-2xl mx-auto ${
+                isDragging
+                  ? 'border-primary bg-blue-50'
+                  : 'border-gray-300 hover:border-gray-400'
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+            >
+              <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Or drop your base IES file here
+              </h3>
+              <p className="text-sm text-gray-600">
+                This file will be used as the template for generating variants
+              </p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 max-w-2xl mx-auto">
+              {error}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -230,7 +324,7 @@ export function BatchGeneratorPage() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Base File</h2>
             <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
               <FileText className="w-10 h-10 text-primary" />
-              <div>
+              <div className="flex-1">
                 <p className="font-medium text-gray-900">{currentFile.fileName}</p>
                 <p className="text-sm text-gray-600">
                   {currentFile.photometricData.totalLumens.toFixed(0)} lumens (fixed)
@@ -239,6 +333,17 @@ export function BatchGeneratorPage() {
                   <p className="text-xs text-blue-600 mt-1">✓ Includes your edits</p>
                 )}
               </div>
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept=".ies,.IES"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <span className="text-xs text-blue-600 hover:text-blue-800 underline whitespace-nowrap">
+                  Change File
+                </span>
+              </label>
             </div>
           </div>
 

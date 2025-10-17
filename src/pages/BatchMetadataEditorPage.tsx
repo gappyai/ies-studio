@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Upload, Download, FileText, Settings, Save, Trash2, ArrowLeftRight } from 'lucide-react';
+import { Upload, Download, FileText, Settings, Trash2, ArrowLeftRight } from 'lucide-react';
 import { useIESFileStore, type BatchFile, type CSVMetadata } from '../store/iesFileStore';
 import { iesParser } from '../services/iesParser';
 import { iesGenerator } from '../services/iesGenerator';
@@ -16,7 +16,7 @@ export function BatchMetadataEditorPage() {
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
 
   // CSV headers (including photometric fields by default)
-  const [includePhotometric, setIncludePhotometric] = useState(true);
+  const [includePhotometric] = useState(true);
   
   const csvHeaders: (keyof CSVRow)[] = includePhotometric
     ? [
@@ -173,32 +173,6 @@ export function BatchMetadataEditorPage() {
     const csvContent = csvService.exportCSV(csvData, includePhotometric);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     saveAs(blob, 'batch_metadata_template.csv');
-  };
-
-  const exportDimensions = () => {
-    if (batchFiles.length === 0) {
-      alert('No files loaded');
-      return;
-    }
-
-    const dimensionData = batchFiles.map(file => ({
-      filename: file.fileName,
-      width: file.photometricData.width.toFixed(4),
-      length: file.photometricData.length.toFixed(4),
-      height: file.photometricData.height.toFixed(4),
-      units: file.photometricData.unitsType === 1 ? 'feet' : 'meters',
-      wattage: file.photometricData.inputWatts.toFixed(2),
-      lumens: file.photometricData.totalLumens.toFixed(1)
-    }));
-
-    const headers = ['filename', 'width', 'length', 'height', 'units', 'wattage', 'lumens'];
-    const csvRows = dimensionData.map(row =>
-      headers.map(h => row[h as keyof typeof row]).join(',')
-    );
-    const csvContent = [headers.join(','), ...csvRows].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    saveAs(blob, 'batch_dimensions.csv');
   };
 
   const batchSwapDimensions = () => {

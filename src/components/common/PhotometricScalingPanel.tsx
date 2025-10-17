@@ -10,7 +10,6 @@ interface PhotometricScalingPanelProps {
 
 export function PhotometricScalingPanel({
   currentPhotometricData,
-  onPhotometricUpdate,
   onBulkUpdate
 }: PhotometricScalingPanelProps) {
   const [cctMultiplier, setCctMultiplier] = useState<string>('1.0');
