@@ -117,3 +117,6 @@ MIT License - feel free to use this project for your own purposes.
 ## Support
 
 For questions or issues, please open an issue on GitHub.
+
+
+Add batch generation

@@ -1,6 +1,106 @@
 import type { PhotometricData, CalculatedProperties } from '../types/ies.types';
 
+export interface ScalingResult {
+  scaledPhotometricData: PhotometricData;
+  scalingFactor: number;
+}
+
 export class PhotometricCalculator {
+  /**
+   * Scale photometric data by CCT multiplier (Type 2)
+   */
+  scaleByCCT(data: PhotometricData, cctMultiplier: number): ScalingResult {
+    const scaled = { ...data };
+    
+    // Scale lumens per lamp
+    scaled.lumensPerLamp = data.lumensPerLamp * cctMultiplier;
+    scaled.totalLumens = scaled.lumensPerLamp * scaled.numberOfLamps;
+    
+    // Scale candela values proportionally
+    scaled.candelaValues = data.candelaValues.map(
+      horizontalSlice => horizontalSlice.map(value => value * cctMultiplier)
+    );
+    
+    return {
+      scaledPhotometricData: scaled,
+      scalingFactor: cctMultiplier
+    };
+  }
+
+  /**
+   * Scale photometric data by wattage change (Type 3)
+   * Assumes constant efficacy
+   */
+  scaleByWattage(data: PhotometricData, newWattage: number): ScalingResult {
+    const wattageRatio = newWattage / data.inputWatts;
+    const scaled = { ...data };
+    
+    // Scale lumens proportionally
+    scaled.lumensPerLamp = data.lumensPerLamp * wattageRatio;
+    scaled.totalLumens = scaled.lumensPerLamp * scaled.numberOfLamps;
+    
+    // Scale candela values proportionally
+    scaled.candelaValues = data.candelaValues.map(
+      horizontalSlice => horizontalSlice.map(value => value * wattageRatio)
+    );
+    
+    // Update wattage
+    scaled.inputWatts = newWattage;
+    
+    return {
+      scaledPhotometricData: scaled,
+      scalingFactor: wattageRatio
+    };
+  }
+
+  /**
+   * Scale photometric data by length change (Type 4)
+   * For linear fixtures only
+   */
+  scaleByLength(data: PhotometricData, newLengthMm: number, unitsType: number = 2): ScalingResult {
+    // Convert mm to file units (meters or feet)
+    const newLength = unitsType === 2 ? newLengthMm / 1000.0 : newLengthMm / 304.8;
+    const lengthRatio = newLength / data.length;
+    
+    const scaled = { ...data };
+    
+    // Scale all photometric values
+    scaled.inputWatts = data.inputWatts * lengthRatio;
+    scaled.lumensPerLamp = data.lumensPerLamp * lengthRatio;
+    scaled.totalLumens = scaled.lumensPerLamp * scaled.numberOfLamps;
+    
+    // Scale candela values
+    scaled.candelaValues = data.candelaValues.map(
+      horizontalSlice => horizontalSlice.map(value => value * lengthRatio)
+    );
+    
+    // Update length dimension
+    scaled.length = newLength;
+    
+    return {
+      scaledPhotometricData: scaled,
+      scalingFactor: lengthRatio
+    };
+  }
+
+  /**
+   * Check if fixture is linear (length >> width and height)
+   */
+  isLinearFixture(data: PhotometricData): boolean {
+    return (data.length / data.width > 5) && (data.length / data.height > 5);
+  }
+
+  /**
+   * Swap width and length dimensions
+   */
+  swapDimensions(data: PhotometricData): PhotometricData {
+    return {
+      ...data,
+      width: data.length,
+      length: data.width
+    };
+  }
+
   calculateProperties(data: PhotometricData): CalculatedProperties {
     return {
       peakIntensity: this.calculatePeakIntensity(data.candelaValues),

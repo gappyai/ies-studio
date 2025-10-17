@@ -2,24 +2,35 @@ import { useState } from 'react';
 import { Download, FileText, Folder } from 'lucide-react';
 import { useIESFileStore } from '../store/iesFileStore';
 import { iesGenerator } from '../services/iesGenerator';
+import { photometricCalculator } from '../services/calculator';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
 interface VariantConfig {
   length: number;
   cct: number;
+  cctMultiplier: number;
+  wattage?: number;
   name: string;
   folder: string;
+  // Preview values
+  previewWattage: number;
+  previewLumens: number;
+  previewEfficacy: number;
 }
 
 export function BatchGeneratorPage() {
   const { currentFile, editedData } = useIESFileStore();
   const [ccts, setCcts] = useState<string>('2700,3000,4000,5000,6500');
-  const [lengths, setLengths] = useState<string>('500,1000,1500,2000');
-  const [namingPattern, setNamingPattern] = useState('{base}_{cct}K_{length}mm');
+  const [cctMultipliers, setCctMultipliers] = useState<string>('0.88,0.92,1.0,1.05,1.12');
+  const [lengths, setLengths] = useState<string>('0.5,1.0,1.5,2.0');
+  const [wattages, setWattages] = useState<string>('');
+  const [namingPattern, setNamingPattern] = useState('{base}_{cct}K_{length}m');
   const [productCodePattern, setProductCodePattern] = useState('RO40G{cct}{length}S');
   const [variants, setVariants] = useState<VariantConfig[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [useCCTMultiplier, setUseCCTMultiplier] = useState(true);
+  const [useWattageScaling, setUseWattageScaling] = useState(false);
 
   if (!currentFile) {
     return (
@@ -39,23 +50,94 @@ export function BatchGeneratorPage() {
     const baseName = currentFile.fileName.replace(/\.(ies|IES)$/i, '');
     
     const cctArray = ccts.split(',').map(c => parseInt(c.trim())).filter(c => !isNaN(c));
-    const lengthArray = lengths.split(',').map(l => parseInt(l.trim())).filter(l => !isNaN(l));
+    const multiplierArray = useCCTMultiplier
+      ? cctMultipliers.split(',').map(m => parseFloat(m.trim())).filter(m => !isNaN(m))
+      : cctArray.map(() => 1.0);
+    const lengthArray = lengths.split(',').map(l => parseFloat(l.trim())).filter(l => !isNaN(l));
+    const wattageArray = useWattageScaling && wattages
+      ? wattages.split(',').map(w => parseFloat(w.trim())).filter(w => !isNaN(w))
+      : [];
     
-    for (const cct of cctArray) {
-      for (const length of lengthArray) {
-        const name = namingPattern
-          .replace('{base}', baseName)
-          .replace('{cct}', cct.toString())
-          .replace('{length}', length.toString());
+    // Ensure multipliers match CCTs count
+    if (useCCTMultiplier && multiplierArray.length !== cctArray.length) {
+      alert(`CCT count (${cctArray.length}) must match multiplier count (${multiplierArray.length})`);
+      return;
+    }
+    
+    for (let i = 0; i < cctArray.length; i++) {
+      const cct = cctArray[i];
+      const multiplier = multiplierArray[i] || 1.0;
+      
+      for (const lengthM of lengthArray) {
+        // Calculate preview photometric values
+        let previewData = { ...workingFile.photometricData };
         
-        const folder = `${cct}K/${length}mm`;
+        // Apply CCT multiplier
+        if (useCCTMultiplier && multiplier !== 1.0) {
+          const scaled = photometricCalculator.scaleByCCT(previewData, multiplier);
+          previewData = scaled.scaledPhotometricData;
+        }
         
-        newVariants.push({
-          length,
-          cct,
-          name: `${name}.ies`,
-          folder,
-        });
+        // Apply length scaling (convert m to mm for calculator)
+        const lengthResult = photometricCalculator.scaleByLength(
+          previewData,
+          lengthM * 1000,
+          workingFile.photometricData.unitsType
+        );
+        previewData = lengthResult.scaledPhotometricData;
+        
+        if (wattageArray.length > 0) {
+          // If wattages specified, create variant for each wattage
+          for (const wattage of wattageArray) {
+            // Apply wattage scaling to preview
+            const wattageResult = photometricCalculator.scaleByWattage(previewData, wattage);
+            const finalPreviewData = wattageResult.scaledPhotometricData;
+            
+            const name = namingPattern
+              .replace('{base}', baseName)
+              .replace('{cct}', cct.toString())
+              .replace('{length}', lengthM.toString())
+              .replace('{wattage}', wattage.toString());
+            
+            const folder = `${cct}K/${lengthM}m/${wattage}W`;
+            
+            newVariants.push({
+              length: lengthM,
+              cct,
+              cctMultiplier: multiplier,
+              wattage,
+              name: `${name}.ies`,
+              folder,
+              previewWattage: finalPreviewData.inputWatts,
+              previewLumens: finalPreviewData.totalLumens,
+              previewEfficacy: photometricCalculator.calculateEfficacy(
+                finalPreviewData.totalLumens,
+                finalPreviewData.inputWatts
+              )
+            });
+          }
+        } else {
+          const name = namingPattern
+            .replace('{base}', baseName)
+            .replace('{cct}', cct.toString())
+            .replace('{length}', lengthM.toString());
+          
+          const folder = `${cct}K/${lengthM}m`;
+          
+          newVariants.push({
+            length: lengthM,
+            cct,
+            cctMultiplier: multiplier,
+            name: `${name}.ies`,
+            folder,
+            previewWattage: previewData.inputWatts,
+            previewLumens: previewData.totalLumens,
+            previewEfficacy: photometricCalculator.calculateEfficacy(
+              previewData.totalLumens,
+              previewData.inputWatts
+            )
+          });
+        }
       }
     }
     
@@ -68,26 +150,45 @@ export function BatchGeneratorPage() {
       const zip = new JSZip();
       
       for (const variant of variants) {
-        // Convert length from mm to meters for IES file WIDTH field (width = LED strip length)
-        const lengthInMeters = variant.length / 1000;
+        let variantPhotometricData = { ...workingFile.photometricData };
         
-        const variantFile = iesGenerator.generateVariant(
-          workingFile,
-          workingFile.photometricData.totalLumens, // Keep original lumens
-          {
-            width: lengthInMeters,  // Width field represents LED strip length
-            length: workingFile.photometricData.length,
-            height: workingFile.photometricData.height
-          },
-          variant.name,
-          variant.cct
+        // Apply CCT multiplier if enabled
+        if (useCCTMultiplier && variant.cctMultiplier !== 1.0) {
+          const scaled = photometricCalculator.scaleByCCT(variantPhotometricData, variant.cctMultiplier);
+          variantPhotometricData = scaled.scaledPhotometricData;
+        }
+        
+        // Apply length scaling (convert m to mm for calculator)
+        const lengthResult = photometricCalculator.scaleByLength(
+          variantPhotometricData,
+          variant.length * 1000,
+          workingFile.photometricData.unitsType
         );
+        variantPhotometricData = lengthResult.scaledPhotometricData;
+        
+        // Apply wattage scaling if specified
+        if (variant.wattage) {
+          const wattageResult = photometricCalculator.scaleByWattage(variantPhotometricData, variant.wattage);
+          variantPhotometricData = wattageResult.scaledPhotometricData;
+        }
+        
+        // Create variant file with updated photometric data
+        const variantFile = {
+          ...workingFile,
+          fileName: variant.name,
+          photometricData: variantPhotometricData,
+          metadata: {
+            ...workingFile.metadata,
+            colorTemperature: variant.cct
+          }
+        };
         
         // Update product code if pattern provided
         if (productCodePattern) {
           const productCode = productCodePattern
             .replace('{cct}', Math.round(variant.cct / 100).toString())
-            .replace('{length}', variant.length.toString());
+            .replace('{length}', variant.length.toString())
+            .replace('{wattage}', variant.wattage?.toString() || '');
           variantFile.metadata.luminaireCatalogNumber = productCode;
         }
         
@@ -154,27 +255,84 @@ export function BatchGeneratorPage() {
             <p className="text-xs text-gray-500 mt-2">
               Example: 2700,3000,4000,5000,6500
             </p>
+            
+            <div className="mt-4">
+              <label className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+                <input
+                  type="checkbox"
+                  checked={useCCTMultiplier}
+                  onChange={(e) => setUseCCTMultiplier(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                Apply CCT Multipliers (Type 2)
+              </label>
+              
+              {useCCTMultiplier && (
+                <>
+                  <p className="text-sm text-gray-600 mb-2">Lumen multipliers (must match CCT count)</p>
+                  <input
+                    type="text"
+                    value={cctMultipliers}
+                    onChange={(e) => setCctMultipliers(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-sm"
+                    placeholder="0.88,0.92,1.0,1.05,1.12"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Lower CCT = lower multiplier (e.g., 3000K = 0.92)
+                  </p>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="bg-white p-6 rounded-lg shadow-sm">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Lengths (mm)</h2>
-            <p className="text-sm text-gray-600 mb-3">Comma-separated lengths in millimeters</p>
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Lengths (meters)</h2>
+            <p className="text-sm text-gray-600 mb-3">Comma-separated lengths in meters</p>
             <input
               type="text"
               value={lengths}
               onChange={(e) => setLengths(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-sm"
-              placeholder="500,1000,1500,2000"
+              placeholder="0.5,1.0,1.5,2.0"
             />
             <p className="text-xs text-gray-500 mt-2">
-              Example: 500,1000,1500,2000
+              Example: 0.5,1.0,1.5,2.0
             </p>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow-sm">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Wattage Options (Type 3)</h2>
+            <label className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+              <input
+                type="checkbox"
+                checked={useWattageScaling}
+                onChange={(e) => setUseWattageScaling(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Generate Wattage Variants
+            </label>
+            
+            {useWattageScaling && (
+              <>
+                <p className="text-sm text-gray-600 mb-2">Comma-separated wattage values</p>
+                <input
+                  type="text"
+                  value={wattages}
+                  onChange={(e) => setWattages(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-sm"
+                  placeholder="30,40,50,60"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Example: 30,40,50,60
+                </p>
+              </>
+            )}
           </div>
 
           <div className="bg-white p-6 rounded-lg shadow-sm">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">File Naming</h2>
             <p className="text-sm text-gray-600 mb-3">
-              Use {'{base}'}, {'{cct}'}, {'{length}'}
+              Use {'{base}'}, {'{cct}'}, {'{length}'}, {'{wattage}'}
             </p>
             <input
               type="text"
@@ -188,7 +346,7 @@ export function BatchGeneratorPage() {
               Product Code Pattern (optional)
             </label>
             <p className="text-xs text-gray-600 mb-2">
-              Updates [LUMCAT] field. Use {'{cct}'}, {'{length}'}
+              Updates [LUMCAT] field. Use {'{cct}'}, {'{length}'}, {'{wattage}'}
             </p>
             <input
               type="text"
@@ -243,17 +401,35 @@ export function BatchGeneratorPage() {
                     {folderVariants.map((variant, index) => (
                       <div
                         key={index}
-                        className="flex justify-between items-center p-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors"
+                        className="p-3 bg-gray-50 rounded hover:bg-gray-100 transition-colors"
                       >
-                        <div className="flex items-center gap-2 flex-1">
-                          <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                          <span className="font-mono text-xs text-gray-900 truncate">
-                            {variant.name}
-                          </span>
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-center gap-2 flex-1">
+                            <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            <span className="font-mono text-xs text-gray-900 truncate">
+                              {variant.name}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-gray-600">
-                          <span>{variant.cct}K</span>
-                          <span>{variant.length}mm</span>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs ml-6">
+                          <div className="text-gray-600">
+                            <span className="font-medium">CCT:</span> {variant.cct}K
+                            {variant.cctMultiplier !== 1.0 && (
+                              <span className="text-blue-600 ml-1">(×{variant.cctMultiplier})</span>
+                            )}
+                          </div>
+                          <div className="text-gray-600">
+                            <span className="font-medium">Length:</span> {variant.length}m
+                          </div>
+                          <div className="text-gray-600">
+                            <span className="font-medium">Power:</span> {variant.previewWattage.toFixed(1)}W
+                          </div>
+                          <div className="text-gray-600">
+                            <span className="font-medium">Output:</span> {variant.previewLumens.toFixed(0)} lm
+                          </div>
+                          <div className="text-gray-600 col-span-2">
+                            <span className="font-medium">Efficacy:</span> {variant.previewEfficacy.toFixed(1)} lm/W
+                          </div>
                         </div>
                       </div>
                     ))}
