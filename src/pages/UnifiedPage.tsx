@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Save, RotateCcw, Download, Edit3, Eye, FileText, Upload, Settings, Grid, BarChart3 } from 'lucide-react';
 import { useIESFileStore } from '../store/iesFileStore';
 import { iesGenerator } from '../services/iesGenerator';
@@ -10,7 +9,6 @@ import type { IESMetadata, PhotometricData } from '../types/ies.types';
 import { IntegratedPhotometricEditor } from '../components/common/IntegratedPhotometricEditor';
 
 export function UnifiedPage() {
-  const navigate = useNavigate();
   const {
     currentFile,
     editedData,
