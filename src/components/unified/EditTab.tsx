@@ -9,6 +9,7 @@ interface EditTabProps {
   onMetadataChange: (key: keyof IESMetadata, value: any) => void;
   onPhotometricChange: (key: keyof PhotometricData, value: any) => void;
   onBulkPhotometricUpdate: (updates: Partial<PhotometricData>) => void;
+  onToast?: (message: string, type?: 'success' | 'info' | 'error') => void;
 }
 
 export function EditTab({
@@ -18,7 +19,8 @@ export function EditTab({
   isDirty,
   onMetadataChange,
   onPhotometricChange,
-  onBulkPhotometricUpdate
+  onBulkPhotometricUpdate,
+  onToast
 }: EditTabProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -210,6 +212,7 @@ export function EditTab({
           onPhotometricUpdate={onPhotometricChange}
           onBulkUpdate={onBulkPhotometricUpdate}
           onCCTUpdate={(cct) => onMetadataChange('colorTemperature', cct)}
+          onToast={onToast}
         />
 
         {isDirty && (

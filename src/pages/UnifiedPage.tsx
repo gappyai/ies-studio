@@ -11,6 +11,7 @@ import { OverviewTab } from '../components/unified/OverviewTab';
 import { EditTab } from '../components/unified/EditTab';
 import { ChartsTab } from '../components/unified/ChartsTab';
 import { View3DTab } from '../components/unified/View3DTab';
+import { Toast } from '../components/common/Toast';
 
 export function UnifiedPage() {
   const {
@@ -33,6 +34,9 @@ export function UnifiedPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'edit' | 'charts' | '3d'>('overview');
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'info' | 'error'>('success');
 
   useEffect(() => {
     if (currentFile) {
@@ -98,7 +102,13 @@ export function UnifiedPage() {
 
   const handleSave = () => {
     applyEdits();
-    alert('Changes saved successfully! Your edits will be applied to exports and batch generation.');
+    showToastMessage('Changes saved successfully! Your edits will be applied to exports and batch generation.', 'success');
+  };
+
+  const showToastMessage = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
   };
 
   const handleReset = () => {
@@ -169,6 +179,7 @@ export function UnifiedPage() {
           onMetadataChange={handleMetadataChange}
           onPhotometricChange={handlePhotometricChange}
           onBulkPhotometricUpdate={handleBulkPhotometricUpdate}
+          onToast={showToastMessage}
         />
       )}
 
@@ -178,6 +189,15 @@ export function UnifiedPage() {
 
       {activeTab === '3d' && (
         <View3DTab photometricData={currentFile.photometricData} />
+      )}
+
+      {/* Toast Notification */}
+      {showToast && (
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+        />
       )}
     </div>
   );
