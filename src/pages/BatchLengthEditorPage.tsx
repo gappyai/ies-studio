@@ -195,15 +195,11 @@ export function BatchLengthEditorPage() {
   };
 
   const exportCSV = () => {
-    const headers = ['filename', 'originalLength', 'targetLength', 'scalingDimension', 'scaleFactor', 'previewWattage', 'previewLumens'];
+    // Only export input columns, not calculated preview values
+    const headers = ['filename', 'targetLength'];
     const rows = lengthData.map(row => [
       row.filename,
-      row.originalLength.toFixed(4),
-      row.targetLength,
-      row.scalingDimension,
-      row.scaleFactor.toFixed(4),
-      row.previewWattage.toFixed(2),
-      row.previewLumens.toFixed(0)
+      row.targetLength
     ]);
     
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -422,10 +418,30 @@ export function BatchLengthEditorPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Scaling Dimension</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original (m)</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target (m)</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Scale Factor</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preview Dims (m)</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preview Power</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preview Lumens</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-blue-50 border-l-2 border-blue-300">
+                    <div className="flex items-center gap-1">
+                      <span>Scale Factor</span>
+                      <span className="text-blue-600">📊</span>
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-blue-50">
+                    <div className="flex items-center gap-1">
+                      <span>Preview Dims (m)</span>
+                      <span className="text-blue-600">📊</span>
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-blue-50">
+                    <div className="flex items-center gap-1">
+                      <span>Preview Power</span>
+                      <span className="text-blue-600">📊</span>
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-blue-50">
+                    <div className="flex items-center gap-1">
+                      <span>Preview Lumens</span>
+                      <span className="text-blue-600">📊</span>
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -474,18 +490,18 @@ export function BatchLengthEditorPage() {
                           </div>
                         )}
                       </td>
-                      <td className={`px-4 py-2 text-sm ${hasChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
+                      <td className={`px-4 py-2 text-sm bg-blue-50 border-l-2 border-blue-300 ${hasChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
                         {row.scaleFactor.toFixed(4)}
                       </td>
-                      <td className="px-4 py-2 text-xs text-gray-600">
+                      <td className="px-4 py-2 text-xs bg-blue-50 text-gray-600">
                         L: {row.previewLength.toFixed(3)}<br/>
                         W: {row.previewWidth.toFixed(3)}<br/>
                         H: {row.previewHeight.toFixed(3)}
                       </td>
-                      <td className={`px-4 py-2 text-sm ${hasChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
+                      <td className={`px-4 py-2 text-sm bg-blue-50 ${hasChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
                         {row.previewWattage.toFixed(2)} W
                       </td>
-                      <td className={`px-4 py-2 text-sm ${hasChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
+                      <td className={`px-4 py-2 text-sm bg-blue-50 ${hasChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
                         {row.previewLumens.toFixed(0)} lm
                       </td>
                     </tr>

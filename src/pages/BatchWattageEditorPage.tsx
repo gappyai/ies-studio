@@ -132,13 +132,11 @@ export function BatchWattageEditorPage() {
   };
 
   const exportCSV = () => {
-    const headers = ['filename', 'originalWattage', 'newWattage', 'originalLumens', 'previewLumens'];
+    // Only export input columns, not calculated preview values
+    const headers = ['filename', 'wattage'];
     const rows = wattageData.map(row => [
       row.filename,
-      row.originalWattage.toFixed(2),
-      row.newWattage,
-      row.originalLumens.toFixed(0),
-      row.previewLumens.toFixed(0)
+      row.newWattage
     ]);
     
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -328,8 +326,18 @@ export function BatchWattageEditorPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original Wattage (W)</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">New Wattage (W)</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original Lumens</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preview Lumens</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Efficacy (lm/W)</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-blue-50 border-l-2 border-blue-300">
+                    <div className="flex items-center gap-1">
+                      <span>Preview Lumens</span>
+                      <span className="text-blue-600">📊</span>
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-blue-50">
+                    <div className="flex items-center gap-1">
+                      <span>Efficacy (lm/W)</span>
+                      <span className="text-blue-600">📊</span>
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -367,10 +375,10 @@ export function BatchWattageEditorPage() {
                         )}
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-600">{row.originalLumens.toFixed(0)}</td>
-                      <td className={`px-4 py-2 text-sm ${hasChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
+                      <td className={`px-4 py-2 text-sm bg-blue-50 border-l-2 border-blue-300 ${hasChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
                         {row.previewLumens.toFixed(0)}
                       </td>
-                      <td className="px-4 py-2 text-sm text-gray-600">{row.previewEfficacy.toFixed(1)}</td>
+                      <td className="px-4 py-2 text-sm bg-blue-50 text-gray-600">{row.previewEfficacy.toFixed(1)}</td>
                     </tr>
                   );
                 })}
