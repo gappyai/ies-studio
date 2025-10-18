@@ -84,6 +84,49 @@ export class PhotometricCalculator {
   }
 
   /**
+   * Scale photometric data by any dimension (length, width, or height)
+   * For linear fixtures - scales linearly
+   */
+  scaleByDimension(
+    data: PhotometricData,
+    newValue: number,  // in meters
+    dimension: 'length' | 'width' | 'height'
+  ): ScalingResult {
+    // Get original value of the scaling dimension
+    const originalValue = dimension === 'length' ? data.length :
+                         dimension === 'width' ? data.width :
+                         data.height;
+    
+    const ratio = newValue / originalValue;
+    
+    const scaled = { ...data };
+    
+    // Scale all photometric values linearly
+    scaled.inputWatts = data.inputWatts * ratio;
+    scaled.lumensPerLamp = data.lumensPerLamp * ratio;
+    scaled.totalLumens = scaled.lumensPerLamp * scaled.numberOfLamps;
+    
+    // Scale candela values linearly
+    scaled.candelaValues = data.candelaValues.map(
+      horizontalSlice => horizontalSlice.map(value => value * ratio)
+    );
+    
+    // Update only the scaled dimension, others stay the same
+    if (dimension === 'length') {
+      scaled.length = newValue;
+    } else if (dimension === 'width') {
+      scaled.width = newValue;
+    } else {
+      scaled.height = newValue;
+    }
+    
+    return {
+      scaledPhotometricData: scaled,
+      scalingFactor: ratio
+    };
+  }
+
+  /**
    * Check if fixture is linear (length >> width and height)
    */
   isLinearFixture(data: PhotometricData): boolean {
