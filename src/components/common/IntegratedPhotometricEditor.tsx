@@ -8,13 +8,15 @@ interface IntegratedPhotometricEditorProps {
   onPhotometricUpdate: (key: keyof PhotometricData, value: any) => void;
   onBulkUpdate: (updates: Partial<PhotometricData>) => void;
   onCCTUpdate: (cct: number) => void;
+  onToast?: (message: string, type?: 'success' | 'info' | 'error') => void;
 }
 
 export function IntegratedPhotometricEditor({
   currentPhotometricData,
   onPhotometricUpdate,
   onBulkUpdate,
-  onCCTUpdate
+  onCCTUpdate,
+  onToast
 }: IntegratedPhotometricEditorProps) {
   const [cctValue, setCctValue] = useState('');
   const [cctMultiplier, setCctMultiplier] = useState('1.0');
@@ -28,7 +30,12 @@ export function IntegratedPhotometricEditor({
     currentPhotometricData.length,
     currentPhotometricData.height
   );
-  const longestDimensionName = currentPhotometricData.width >= currentPhotometricData.length ? 'width' : 'length';
+  
+  // Properly determine which dimension is longest
+  const longestDimensionName: 'length' | 'width' | 'height' =
+    longestDimension === currentPhotometricData.length ? 'length' :
+    longestDimension === currentPhotometricData.width ? 'width' : 'height';
+    
   const isLinear = photometricCalculator.isLinearFixture(currentPhotometricData);
   
   // Conversion helpers
@@ -47,7 +54,7 @@ export function IntegratedPhotometricEditor({
     const multiplier = parseFloat(cctMultiplier);
     
     if (isNaN(cct) || cct <= 0) {
-      alert('Please enter a valid CCT value');
+      onToast?.('Please enter a valid CCT value', 'error');
       return;
     }
     
@@ -56,29 +63,30 @@ export function IntegratedPhotometricEditor({
     if (!isNaN(multiplier) && multiplier > 0 && Math.abs(multiplier - 1.0) > 0.001) {
       const result = photometricCalculator.scaleByCCT(currentPhotometricData, multiplier);
       onBulkUpdate(result.scaledPhotometricData);
-      alert(`CCT updated to ${cct}K with multiplier ${multiplier}\nNew lumens: ${result.scaledPhotometricData.totalLumens.toFixed(1)} lm`);
+      onToast?.(`CCT updated to ${cct}K with multiplier ${multiplier} • New lumens: ${result.scaledPhotometricData.totalLumens.toFixed(1)} lm`, 'success');
     } else {
-      alert(`CCT updated to ${cct}K`);
+      onToast?.(`CCT updated to ${cct}K`, 'success');
     }
   };
 
   const handleWattageApply = () => {
     const newWattage = parseFloat(wattageValue);
     if (isNaN(newWattage) || newWattage <= 0) {
-      alert('Please enter a valid wattage value');
+      onToast?.('Please enter a valid wattage value', 'error');
       return;
     }
     
     const result = photometricCalculator.scaleByWattage(currentPhotometricData, newWattage);
     onBulkUpdate(result.scaledPhotometricData);
     
-    alert(`Wattage updated to ${newWattage}W\nNew lumens: ${result.scaledPhotometricData.totalLumens.toFixed(1)} lm\nEfficacy: ${photometricCalculator.calculateEfficacy(result.scaledPhotometricData.totalLumens, newWattage).toFixed(1)} lm/W`);
+    const efficacy = photometricCalculator.calculateEfficacy(result.scaledPhotometricData.totalLumens, newWattage);
+    onToast?.(`Wattage updated to ${newWattage}W • ${result.scaledPhotometricData.totalLumens.toFixed(1)} lm • ${efficacy.toFixed(1)} lm/W`, 'success');
   };
 
   const handleLengthScale = () => {
     const inputValue = parseFloat(lengthValue);
     if (isNaN(inputValue) || inputValue <= 0) {
-      alert(`Please enter a valid length value in ${useImperial ? 'feet' : 'meters'}`);
+      onToast?.(`Please enter a valid length value in ${useImperial ? 'feet' : 'meters'}`, 'error');
       return;
     }
     
@@ -86,31 +94,30 @@ export function IntegratedPhotometricEditor({
     const newLengthMeters = useImperial ? feetToMeters(inputValue) : inputValue;
     
     if (!isLinear) {
-      if (!confirm('This fixture may not be linear. Length scaling is most accurate for linear fixtures. Continue?')) {
-        return;
-      }
+      onToast?.('Warning: This fixture may not be linear. Length scaling is most accurate for linear fixtures.', 'info');
     }
     
-    // Scale based on longest dimension - this will adjust all photometric values proportionally
-    const result = photometricCalculator.scaleByLength(
+    // Scale based on longest dimension using the new scaleByDimension function
+    const result = photometricCalculator.scaleByDimension(
       currentPhotometricData,
-      newLengthMeters * 1000, // Convert to mm for the calculator
-      currentPhotometricData.unitsType
+      newLengthMeters, // Already in meters
+      longestDimensionName
     );
     onBulkUpdate(result.scaledPhotometricData);
     
+    // Update the wattage value in the UI
+    setWattageValue(result.scaledPhotometricData.inputWatts.toFixed(1));
+    
     const displayUnit = useImperial ? 'ft' : 'm';
     const displayValue = useImperial ? inputValue : newLengthMeters;
-    alert(`Longest dimension (${longestDimensionName}) scaled to ${displayValue.toFixed(3)} ${displayUnit}\nNew wattage: ${result.scaledPhotometricData.inputWatts.toFixed(1)}W\nNew lumens: ${result.scaledPhotometricData.totalLumens.toFixed(1)} lm`);
+    onToast?.(`${longestDimensionName} scaled to ${displayValue.toFixed(3)} ${displayUnit} (${result.scalingFactor.toFixed(2)}×) • ${result.scaledPhotometricData.inputWatts.toFixed(1)}W • ${result.scaledPhotometricData.totalLumens.toFixed(1)} lm`, 'success');
   };
 
   const handleDimensionSwap = () => {
-    if (confirm('Swap width and length dimensions?')) {
-      const swapped = photometricCalculator.swapDimensions(currentPhotometricData);
-      onPhotometricUpdate('width', swapped.width);
-      onPhotometricUpdate('length', swapped.length);
-      alert('Dimensions swapped successfully');
-    }
+    const swapped = photometricCalculator.swapDimensions(currentPhotometricData);
+    onPhotometricUpdate('width', swapped.width);
+    onPhotometricUpdate('length', swapped.length);
+    onToast?.('Width and length dimensions swapped', 'success');
   };
 
   return (

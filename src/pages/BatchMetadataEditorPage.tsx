@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Upload, Download, FileText, Settings, Trash2, ArrowLeftRight } from 'lucide-react';
+import { useState } from 'react';
+import { Upload, Download, FileText, Settings, Trash2 } from 'lucide-react';
 import { useIESFileStore, type BatchFile, type CSVMetadata } from '../store/iesFileStore';
 import { iesParser } from '../services/iesParser';
 import { iesGenerator } from '../services/iesGenerator';
 import { csvService, type CSVRow } from '../services/csvService';
-import { photometricCalculator } from '../services/calculator';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
@@ -14,63 +13,25 @@ export function BatchMetadataEditorPage() {
   const [editingCell, setEditingCell] = useState<{row: number, field: keyof CSVRow} | null>(null);
   const [processing, setProcessing] = useState(false);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
-
-  // CSV headers (including photometric fields by default)
-  const [includePhotometric] = useState(true);
+  const [useOriginalFilename, setUseOriginalFilename] = useState(true);
+  const [catalogNumberSource, setCatalogNumberSource] = useState<'luminaire' | 'lamp'>('luminaire');
   
-  const csvHeaders: (keyof CSVRow)[] = includePhotometric
-    ? [
-        'filename',
-        'manufacturer',
-        'luminaireCatalogNumber',
-        'lampCatalogNumber',
-        'test',
-        'testLab',
-        'testDate',
-        'issueDate',
-        'lampPosition',
-        'other',
-        'wattage',
-        'cct',
-        'cctMultiplier',
-        'length',
-        'width',
-        'height'
-      ]
-    : [
-        'filename',
-        'manufacturer',
-        'luminaireCatalogNumber',
-        'lampCatalogNumber',
-        'test',
-        'testLab',
-        'testDate',
-        'issueDate',
-        'lampPosition',
-        'other'
-      ];
-
-  // Sync photometric data from files to table when checkbox is toggled
-  useEffect(() => {
-    if (includePhotometric && batchFiles.length > 0) {
-      const updatedCsvData = csvData.map(row => {
-        const file = batchFiles.find(f => f.fileName === row.filename);
-        if (file) {
-          return {
-            ...row,
-            wattage: row.wattage || file.photometricData.inputWatts.toFixed(2),
-            cct: row.cct || (file.metadata.colorTemperature?.toString() || ''),
-            cctMultiplier: row.cctMultiplier || '1.0',
-            length: row.length || file.photometricData.length.toFixed(4), // Keep in meters
-            width: row.width || file.photometricData.width.toFixed(4),
-            height: row.height || file.photometricData.height.toFixed(4)
-          };
-        }
-        return row;
-      });
-      setCsvData(updatedCsvData);
-    }
-  }, [includePhotometric, batchFiles.length]);
+  const csvHeaders: (keyof CSVRow)[] = [
+    'filename',
+    'manufacturer',
+    'luminaireCatalogNumber',
+    'lampCatalogNumber',
+    'test',
+    'testLab',
+    'testDate',
+    'issueDate',
+    'lampPosition',
+    'other',
+    'cct',
+    'length',
+    'width',
+    'height'
+  ];
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -96,7 +57,7 @@ export function BatchMetadataEditorPage() {
 
         newBatchFiles.push(batchFile);
 
-        // Create CSV row from existing metadata and photometric data
+        // Create CSV row from existing metadata and dimensions
         const csvRow: CSVRow = {
           filename: file.name,
           manufacturer: parsedFile.metadata.manufacturer || '',
@@ -108,11 +69,8 @@ export function BatchMetadataEditorPage() {
           issueDate: parsedFile.metadata.issueDate || '',
           lampPosition: parsedFile.metadata.lampPosition || '',
           other: parsedFile.metadata.other || '',
-          // Photometric fields (always populated, shown when includePhotometric is true)
-          wattage: parsedFile.photometricData.inputWatts.toFixed(2),
           cct: parsedFile.metadata.colorTemperature?.toString() || '',
-          cctMultiplier: '1.0',
-          length: parsedFile.photometricData.length.toFixed(4), // Keep in meters
+          length: parsedFile.photometricData.length.toFixed(4),
           width: parsedFile.photometricData.width.toFixed(4),
           height: parsedFile.photometricData.height.toFixed(4)
         };
@@ -170,33 +128,9 @@ export function BatchMetadataEditorPage() {
   };
 
   const exportCSV = () => {
-    const csvContent = csvService.exportCSV(csvData, includePhotometric);
+    const csvContent = csvService.exportCSV(csvData, false);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     saveAs(blob, 'batch_metadata_template.csv');
-  };
-
-  const batchSwapDimensions = () => {
-    if (csvData.length === 0) {
-      alert('No files loaded');
-      return;
-    }
-
-    if (!confirm(`Swap width and length for all ${csvData.length} files?`)) {
-      return;
-    }
-
-    // Update the CSV table data - swap width and length
-    const updatedCsvData = csvData.map(row => {
-      const temp = row.width;
-      return {
-        ...row,
-        width: row.length,
-        length: temp
-      };
-    });
-
-    setCsvData(updatedCsvData);
-    alert('Dimensions swapped in table. Changes will be applied on download.');
   };
 
   const updateCell = (rowIndex: number, field: keyof CSVRow, value: string) => {
@@ -261,53 +195,36 @@ export function BatchMetadataEditorPage() {
           ...(file.metadataUpdates || {})
         };
 
-        // Apply photometric updates from CSV table (single source of truth)
+        // Apply dimension and CCT updates from CSV if provided (as-is, no scaling)
         const csvRow = csvData.find(row => row.filename === file.fileName);
         if (csvRow) {
-          // Apply dimension updates (already in meters)
-          if (csvRow.width) {
-            const widthM = parseFloat(csvRow.width);
-            if (!isNaN(widthM)) {
-              updatedFile.photometricData.width = widthM;
-            }
-          }
-          if (csvRow.length) {
-            const lengthM = parseFloat(csvRow.length);
-            if (!isNaN(lengthM)) {
-              updatedFile.photometricData.length = lengthM;
-            }
-          }
-          if (csvRow.height) {
-            const heightM = parseFloat(csvRow.height);
-            if (!isNaN(heightM)) {
-              updatedFile.photometricData.height = heightM;
-            }
-          }
-
-          // Apply wattage scaling (if different from original)
-          if (csvRow.wattage) {
-            const newWattage = parseFloat(csvRow.wattage);
-            const originalWattage = file.photometricData.inputWatts;
-            if (!isNaN(newWattage) && newWattage > 0 && Math.abs(newWattage - originalWattage) > 0.01) {
-              const result = photometricCalculator.scaleByWattage(updatedFile.photometricData, newWattage);
-              updatedFile.photometricData = result.scaledPhotometricData;
-            }
-          }
-
-          // Apply CCT metadata
-          if (csvRow.cct) {
+          // Only update fields that are present in CSV (not empty/undefined)
+          if (csvRow.cct && csvRow.cct.trim() !== '') {
             const cct = parseFloat(csvRow.cct);
             if (!isNaN(cct)) {
               updatedFile.metadata.colorTemperature = cct;
             }
           }
           
-          // Apply CCT multiplier scaling
-          if (csvRow.cctMultiplier) {
-            const multiplier = parseFloat(csvRow.cctMultiplier);
-            if (!isNaN(multiplier) && multiplier > 0 && Math.abs(multiplier - 1.0) > 0.001) {
-              const result = photometricCalculator.scaleByCCT(updatedFile.photometricData, multiplier);
-              updatedFile.photometricData = result.scaledPhotometricData;
+          // Update dimensions if provided (already in meters, set as-is)
+          if (csvRow.length && csvRow.length.trim() !== '') {
+            const lengthM = parseFloat(csvRow.length);
+            if (!isNaN(lengthM)) {
+              updatedFile.photometricData.length = lengthM;
+            }
+          }
+          
+          if (csvRow.width && csvRow.width.trim() !== '') {
+            const widthM = parseFloat(csvRow.width);
+            if (!isNaN(widthM)) {
+              updatedFile.photometricData.width = widthM;
+            }
+          }
+          
+          if (csvRow.height && csvRow.height.trim() !== '') {
+            const heightM = parseFloat(csvRow.height);
+            if (!isNaN(heightM)) {
+              updatedFile.photometricData.height = heightM;
             }
           }
         }
@@ -315,10 +232,18 @@ export function BatchMetadataEditorPage() {
         // Generate new IES content
         const iesContent = iesGenerator.generate(updatedFile);
         
-        // Create new filename with LEDFlex naming if manufacturer is LEDFLEX
+        // Determine output filename based on settings
         let newFilename = file.fileName;
-        if (updatedFile.metadata.manufacturer === 'LEDFLEX' && updatedFile.metadata.luminaireCatalogNumber) {
-          newFilename = `${updatedFile.metadata.luminaireCatalogNumber}.ies`;
+        
+        if (!useOriginalFilename) {
+          // Use catalog number for filename
+          const catalogNumber = catalogNumberSource === 'luminaire'
+            ? updatedFile.metadata.luminaireCatalogNumber
+            : updatedFile.metadata.lampCatalogNumber;
+          
+          if (catalogNumber) {
+            newFilename = `${catalogNumber}.ies`;
+          }
         }
 
         zip.file(newFilename, iesContent);
@@ -344,8 +269,13 @@ export function BatchMetadataEditorPage() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Batch Metadata Editor</h1>
           <p className="text-gray-600 mt-1">
-            Upload multiple IES files and update metadata using CSV or inline editing
+            Update metadata for multiple IES files. Metadata values will be set as-is without any scaling.
           </p>
+          <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>Note:</strong> This page only edits metadata fields. Use separate pages for wattage or length edits which require photometric calculations.
+            </p>
+          </div>
         </div>
         <button
           onClick={clearAll}
@@ -405,10 +335,60 @@ export function BatchMetadataEditorPage() {
         </div>
       </div>
 
-      {/* Quick Actions */}
+      {/* Download Settings */}
       {csvData.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Download Settings</h2>
+          
+          {/* Filename Options */}
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Output Filename</h3>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="radio"
+                  checked={useOriginalFilename}
+                  onChange={() => setUseOriginalFilename(true)}
+                  className="text-blue-600 focus:ring-blue-500"
+                />
+                Use Original Filename
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="radio"
+                  checked={!useOriginalFilename}
+                  onChange={() => setUseOriginalFilename(false)}
+                  className="text-blue-600 focus:ring-blue-500"
+                />
+                Use Catalog Number
+              </label>
+            </div>
+            
+            {!useOriginalFilename && (
+              <div className="mt-3 ml-6 space-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    checked={catalogNumberSource === 'luminaire'}
+                    onChange={() => setCatalogNumberSource('luminaire')}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  Luminaire Catalog Number (preferred)
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    checked={catalogNumberSource === 'lamp'}
+                    onChange={() => setCatalogNumberSource('lamp')}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  Lamp Catalog Number (fallback)
+                </label>
+              </div>
+            )}
+          </div>
+          
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h3>
           {csvErrors.length > 0 && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
               <h3 className="text-sm font-medium text-red-800 mb-2">CSV Validation Errors:</h3>
@@ -473,30 +453,18 @@ export function BatchMetadataEditorPage() {
       {/* CSV Editor */}
       {csvData.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow-sm">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">Metadata Editor</h2>
-            <button
-              onClick={batchSwapDimensions}
-              disabled={batchFiles.length === 0}
-              className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 disabled:opacity-50"
-            >
-              <ArrowLeftRight className="w-4 h-4" />
-              Swap Width ↔ Length
-            </button>
-          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Metadata Editor</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   {csvHeaders.map((header) => {
-                    // Add unit labels for dimension fields
                     let displayHeader = header.replace(/([A-Z])/g, ' $1').trim();
+                    // Add unit labels for dimension and CCT fields
                     if (header === 'length' || header === 'width' || header === 'height') {
                       displayHeader += ' (m)';
-                    } else if (header === 'wattage') {
-                      displayHeader += ' (W)';
                     } else if (header === 'cct') {
-                      displayHeader += ' (K)';
+                      displayHeader = 'CCT (K)';
                     }
                     return (
                       <th
