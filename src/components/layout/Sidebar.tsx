@@ -1,4 +1,4 @@
-import { FileText, Box, Grid, BarChart3, Settings, Zap, Ruler, Palette } from 'lucide-react';
+import { FileText, Settings, Zap, Ruler, Palette } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 const navigationItems = [
@@ -7,8 +7,6 @@ const navigationItems = [
   { path: '/batch-wattage', icon: Zap, label: 'Batch Wattage' },
   { path: '/batch-length', icon: Ruler, label: 'Batch Length' },
   { path: '/batch-cct', icon: Palette, label: 'Batch CCT' },
-  { path: '/charts', icon: BarChart3, label: 'Charts' },
-  { path: '/3d', icon: Box, label: '3D View' },
 ];
 
 export function Sidebar() {
