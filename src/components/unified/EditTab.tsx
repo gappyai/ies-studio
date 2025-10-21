@@ -103,6 +103,25 @@ export function EditTab({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Near Field Type
+              </label>
+              <select
+                value={localData.nearField || ''}
+                onChange={(e) => onMetadataChange('nearField', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              >
+                <option value="">None</option>
+                <option value="1">1 - Point Source</option>
+                <option value="2">2 - Linear Source</option>
+                <option value="3">3 - Rectangular/Area Source</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Dimensions will be automatically used from the photometric data
+              </p>
+            </div>
           </div>
         </div>
 

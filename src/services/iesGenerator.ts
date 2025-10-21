@@ -14,6 +14,11 @@ export class IESGenerator {
     if (file.metadata.issueDate) lines.push(`[ISSUEDATE] ${file.metadata.issueDate}`);
     if (file.metadata.lampPosition) lines.push(`[LAMPPOSITION] ${file.metadata.lampPosition}`);
     if (file.metadata.other) lines.push(`[OTHER] ${file.metadata.other}`);
+    if (file.metadata.nearField) {
+      // Construct full NEARFIELD line using type and photometric dimensions
+      const nearFieldLine = `[NEARFIELD] ${file.metadata.nearField} ${file.photometricData.width} ${file.photometricData.length} ${file.photometricData.height}`;
+      lines.push(nearFieldLine);
+    }
     if (file.metadata.manufacturer) lines.push(`[MANUFAC] ${file.metadata.manufacturer}`);
     if (file.metadata.luminaireDescription) lines.push(`[LUMINAIRE] ${file.metadata.luminaireDescription}`);
     if (file.metadata.lampCatalogNumber) lines.push(`[LAMPCAT] ${file.metadata.lampCatalogNumber}`);

@@ -15,6 +15,7 @@ export interface IESMetadata {
   issueDate?: string;
   lampPosition?: string;
   other?: string;
+  nearField?: string;
   manufacturer: string;
   luminaireDescription?: string;
   lampCatalogNumber: string;

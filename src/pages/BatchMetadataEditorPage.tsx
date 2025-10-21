@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, Download, FileText, Settings, Trash2 } from 'lucide-react';
+import { Upload, Download, FileText, Settings, Trash2, ArrowLeftRight } from 'lucide-react';
 import { useIESFileStore, type BatchFile, type CSVMetadata } from '../store/iesFileStore';
 import { iesParser } from '../services/iesParser';
 import { iesGenerator } from '../services/iesGenerator';
@@ -27,6 +27,7 @@ export function BatchMetadataEditorPage() {
     'issueDate',
     'lampPosition',
     'other',
+    'nearField',
     'cct',
     'length',
     'width',
@@ -69,6 +70,7 @@ export function BatchMetadataEditorPage() {
           issueDate: parsedFile.metadata.issueDate || '',
           lampPosition: parsedFile.metadata.lampPosition || '',
           other: parsedFile.metadata.other || '',
+          nearField: parsedFile.metadata.nearField || '',
           cct: parsedFile.metadata.colorTemperature?.toString() || '',
           length: parsedFile.photometricData.length.toFixed(4),
           width: parsedFile.photometricData.width.toFixed(4),
@@ -119,7 +121,8 @@ export function BatchMetadataEditorPage() {
           testDate: row.testDate,
           issueDate: row.issueDate,
           lampPosition: row.lampPosition,
-          other: row.other
+          other: row.other,
+          nearField: row.nearField
         };
       });
       setCSVMetadata(metadata);
@@ -128,7 +131,7 @@ export function BatchMetadataEditorPage() {
   };
 
   const exportCSV = () => {
-    const csvContent = csvService.exportCSV(csvData, false);
+    const csvContent = csvService.exportCSV(csvData, true);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     saveAs(blob, 'batch_metadata_template.csv');
   };
@@ -150,7 +153,8 @@ export function BatchMetadataEditorPage() {
         testDate: row.testDate,
         issueDate: row.issueDate,
         lampPosition: row.lampPosition,
-        other: row.other
+        other: row.other,
+        nearField: row.nearField
       };
     });
     setCSVMetadata(metadata);
@@ -172,7 +176,8 @@ export function BatchMetadataEditorPage() {
         testDate: row.testDate,
         issueDate: row.issueDate,
         lampPosition: row.lampPosition,
-        other: row.other
+        other: row.other,
+        nearField: row.nearField
       };
     });
     setCSVMetadata(metadata);
@@ -195,8 +200,12 @@ export function BatchMetadataEditorPage() {
           ...(file.metadataUpdates || {})
         };
 
-        // Apply dimension and CCT updates from CSV if provided (as-is, no scaling)
+        // Apply nearField from CSV if provided
         const csvRow = csvData.find(row => row.filename === file.fileName);
+        if (csvRow?.nearField && csvRow.nearField.trim() !== '') {
+          updatedFile.metadata.nearField = csvRow.nearField;
+        }
+
         if (csvRow) {
           // Only update fields that are present in CSV (not empty/undefined)
           if (csvRow.cct && csvRow.cct.trim() !== '') {
@@ -256,6 +265,32 @@ export function BatchMetadataEditorPage() {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const swapLengthWidth = () => {
+    // Swap length and width in both batchFiles and csvData
+    const updatedBatchFiles = batchFiles.map(file => ({
+      ...file,
+      photometricData: {
+        ...file.photometricData,
+        length: file.photometricData.width,
+        width: file.photometricData.length
+      },
+      metadata: {
+        ...file.metadata,
+        luminousOpeningLength: file.metadata.luminousOpeningWidth,
+        luminousOpeningWidth: file.metadata.luminousOpeningLength
+      }
+    }));
+
+    const updatedCsvData = csvData.map(row => ({
+      ...row,
+      length: row.width,
+      width: row.length
+    }));
+
+    addBatchFiles(updatedBatchFiles);
+    setCsvData(updatedCsvData);
   };
 
   const clearAll = () => {
@@ -328,7 +363,7 @@ export function BatchMetadataEditorPage() {
                 Upload CSV metadata file
               </h3>
               <p className="text-sm text-gray-600">
-                CSV with filename, manufacturer, luminaireCatalogNumber, lampCatalogNumber, test, testLab, testDate, issueDate, lampPosition, other
+                CSV with all fields shown in the table. Dimensions must be in meters.
               </p>
             </div>
           </label>
@@ -453,7 +488,17 @@ export function BatchMetadataEditorPage() {
       {/* CSV Editor */}
       {csvData.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Metadata Editor</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Metadata Editor</h2>
+            <button
+              onClick={swapLengthWidth}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              title="Swap Length and Width values for all files"
+            >
+              <ArrowLeftRight className="w-4 h-4" />
+              Swap Length ⇄ Width
+            </button>
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -465,6 +510,8 @@ export function BatchMetadataEditorPage() {
                       displayHeader += ' (m)';
                     } else if (header === 'cct') {
                       displayHeader = 'CCT (K)';
+                    } else if (header === 'nearField') {
+                      displayHeader = 'Near Field Type';
                     }
                     return (
                       <th
@@ -483,19 +530,34 @@ export function BatchMetadataEditorPage() {
                     {csvHeaders.map((header) => (
                       <td key={header} className="px-4 py-2">
                         {editingCell?.row === rowIndex && editingCell?.field === header ? (
-                          <input
-                            type="text"
-                            value={row[header] || ''}
-                            onChange={(e) => updateCell(rowIndex, header, e.target.value)}
-                            onBlur={() => setEditingCell(null)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                setEditingCell(null);
-                              }
-                            }}
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                            autoFocus
-                          />
+                          header === 'nearField' ? (
+                            <select
+                              value={row[header] || ''}
+                              onChange={(e) => updateCell(rowIndex, header, e.target.value)}
+                              onBlur={() => setEditingCell(null)}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              autoFocus
+                            >
+                              <option value="">None</option>
+                              <option value="1">1 - Point</option>
+                              <option value="2">2 - Linear</option>
+                              <option value="3">3 - Area</option>
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={row[header] || ''}
+                              onChange={(e) => updateCell(rowIndex, header, e.target.value)}
+                              onBlur={() => setEditingCell(null)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  setEditingCell(null);
+                                }
+                              }}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              autoFocus
+                            />
+                          )
                         ) : (
                           <div
                             onClick={() => setEditingCell({row: rowIndex, field: header})}
