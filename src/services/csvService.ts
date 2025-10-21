@@ -9,6 +9,7 @@ export interface CSVRow {
   issueDate?: string;
   lampPosition?: string;
   other?: string;
+  nearField?: string;
   // Photometric update fields
   wattage?: string;
   cct?: string;
@@ -49,25 +50,26 @@ export class CSVService {
       'lampposition': 'lampPosition',
       'lamp position': 'lampPosition',
       'other': 'other',
+      'nearfield': 'nearField',
+      'near field': 'nearField',
+      'near-field': 'nearField',
       // Photometric fields
       'wattage': 'wattage',
       'watts': 'wattage',
       'power': 'wattage',
       'cct': 'cct',
+      'cct (k)': 'cct',
       'colortemperature': 'cct',
       'color temperature': 'cct',
       'cctmultiplier': 'cctMultiplier',
       'cct multiplier': 'cctMultiplier',
       'multiplier': 'cctMultiplier',
       'length': 'length',
-      'length (mm)': 'length',
-      'lengthmm': 'length',
+      'length (m)': 'length',
       'width': 'width',
-      'width (mm)': 'width',
-      'widthmm': 'width',
+      'width (m)': 'width',
       'height': 'height',
-      'height (mm)': 'height',
-      'heightmm': 'height'
+      'height (m)': 'height'
     };
 
     for (let i = 1; i < lines.length; i++) {
@@ -125,8 +127,20 @@ export class CSVService {
    */
   exportCSV(rows: CSVRow[], includePhotometric: boolean = false): string {
     const headers = includePhotometric
-      ? ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'wattage', 'cct', 'cctMultiplier', 'length', 'width', 'height']
-      : ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other'];
+      ? ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField', 'cct', 'length', 'width', 'height']
+      : ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField'];
+    
+    // Create display headers with units
+    const displayHeaders = headers.map(header => {
+      if (header === 'length' || header === 'width' || header === 'height') {
+        return `${header} (m)`;
+      } else if (header === 'cct') {
+        return 'cct (K)';
+      } else if (header === 'nearField') {
+        return 'nearField';
+      }
+      return header;
+    });
     
     const csvRows = rows.map(row => {
       return headers.map(header => {
@@ -139,7 +153,7 @@ export class CSVService {
       }).join(',');
     });
 
-    return [headers.join(','), ...csvRows].join('\n');
+    return [displayHeaders.join(','), ...csvRows].join('\n');
   }
 
   /**
@@ -171,13 +185,14 @@ export class CSVService {
         issueDate: '01/20/2024',
         lampPosition: 'Universal',
         other: 'Factory to LEDFlex conversion',
+        nearField: '',
         ...(includePhotometric && {
           wattage: '40',
           cct: '4000',
           cctMultiplier: '1.0',
-          length: '1000',
-          width: '50',
-          height: '10'
+          length: '1.000',
+          width: '0.050',
+          height: '0.010'
         })
       }
     ];

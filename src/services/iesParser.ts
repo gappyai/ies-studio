@@ -66,8 +66,9 @@ export class IESParser {
         const value = line.substring(line.indexOf(']') + 1).trim();
         metadata.colorRenderingIndex = parseFloat(value);
       } else if (line.startsWith('[NEARFIELD]')) {
-        // Skip nearfield data
-        continue;
+        // Extract only the type (first value after [NEARFIELD])
+        const parts = line.substring(11).trim().split(/\s+/);
+        metadata.nearField = parts[0] || '';
       } else if (line.startsWith('TILT')) {
         // End of keywords section
         break;
