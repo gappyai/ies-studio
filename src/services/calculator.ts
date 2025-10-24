@@ -5,6 +5,13 @@ export interface ScalingResult {
   scalingFactor: number;
 }
 
+/**
+ * Helper function to truncate numbers to 3 decimal places
+ */
+function truncateToThreeDecimals(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
 export class PhotometricCalculator {
   /**
    * Scale photometric data by CCT multiplier (Type 2)
@@ -13,17 +20,17 @@ export class PhotometricCalculator {
     const scaled = { ...data };
     
     // Scale lumens per lamp
-    scaled.lumensPerLamp = data.lumensPerLamp * cctMultiplier;
-    scaled.totalLumens = scaled.lumensPerLamp * scaled.numberOfLamps;
+    scaled.lumensPerLamp = truncateToThreeDecimals(data.lumensPerLamp * cctMultiplier);
+    scaled.totalLumens = truncateToThreeDecimals(scaled.lumensPerLamp * scaled.numberOfLamps);
     
     // Scale candela values proportionally
     scaled.candelaValues = data.candelaValues.map(
-      horizontalSlice => horizontalSlice.map(value => value * cctMultiplier)
+      horizontalSlice => horizontalSlice.map(value => truncateToThreeDecimals(value * cctMultiplier))
     );
     
     return {
       scaledPhotometricData: scaled,
-      scalingFactor: cctMultiplier
+      scalingFactor: truncateToThreeDecimals(cctMultiplier)
     };
   }
 
@@ -32,20 +39,20 @@ export class PhotometricCalculator {
    * Assumes constant efficacy
    */
   scaleByWattage(data: PhotometricData, newWattage: number): ScalingResult {
-    const wattageRatio = newWattage / data.inputWatts;
+    const wattageRatio = truncateToThreeDecimals(newWattage / data.inputWatts);
     const scaled = { ...data };
     
     // Scale lumens proportionally
-    scaled.lumensPerLamp = data.lumensPerLamp * wattageRatio;
-    scaled.totalLumens = scaled.lumensPerLamp * scaled.numberOfLamps;
+    scaled.lumensPerLamp = truncateToThreeDecimals(data.lumensPerLamp * wattageRatio);
+    scaled.totalLumens = truncateToThreeDecimals(scaled.lumensPerLamp * scaled.numberOfLamps);
     
     // Scale candela values proportionally
     scaled.candelaValues = data.candelaValues.map(
-      horizontalSlice => horizontalSlice.map(value => value * wattageRatio)
+      horizontalSlice => horizontalSlice.map(value => truncateToThreeDecimals(value * wattageRatio))
     );
     
     // Update wattage
-    scaled.inputWatts = newWattage;
+    scaled.inputWatts = truncateToThreeDecimals(newWattage);
     
     return {
       scaledPhotometricData: scaled,
@@ -59,19 +66,19 @@ export class PhotometricCalculator {
    */
   scaleByLength(data: PhotometricData, newLengthMm: number, unitsType: number = 2): ScalingResult {
     // Convert mm to file units (meters or feet)
-    const newLength = unitsType === 2 ? newLengthMm / 1000.0 : newLengthMm / 304.8;
-    const lengthRatio = newLength / data.length;
+    const newLength = truncateToThreeDecimals(unitsType === 2 ? newLengthMm / 1000.0 : newLengthMm / 304.8);
+    const lengthRatio = truncateToThreeDecimals(newLength / data.length);
     
     const scaled = { ...data };
     
     // Scale all photometric values
-    scaled.inputWatts = data.inputWatts * lengthRatio;
-    scaled.lumensPerLamp = data.lumensPerLamp * lengthRatio;
-    scaled.totalLumens = scaled.lumensPerLamp * scaled.numberOfLamps;
+    scaled.inputWatts = truncateToThreeDecimals(data.inputWatts * lengthRatio);
+    scaled.lumensPerLamp = truncateToThreeDecimals(data.lumensPerLamp * lengthRatio);
+    scaled.totalLumens = truncateToThreeDecimals(scaled.lumensPerLamp * scaled.numberOfLamps);
     
     // Scale candela values
     scaled.candelaValues = data.candelaValues.map(
-      horizontalSlice => horizontalSlice.map(value => value * lengthRatio)
+      horizontalSlice => horizontalSlice.map(value => truncateToThreeDecimals(value * lengthRatio))
     );
     
     // Update length dimension
@@ -97,27 +104,27 @@ export class PhotometricCalculator {
                          dimension === 'width' ? data.width :
                          data.height;
     
-    const ratio = newValue / originalValue;
+    const ratio = truncateToThreeDecimals(newValue / originalValue);
     
     const scaled = { ...data };
     
     // Scale all photometric values linearly
-    scaled.inputWatts = data.inputWatts * ratio;
-    scaled.lumensPerLamp = data.lumensPerLamp * ratio;
-    scaled.totalLumens = scaled.lumensPerLamp * scaled.numberOfLamps;
+    scaled.inputWatts = truncateToThreeDecimals(data.inputWatts * ratio);
+    scaled.lumensPerLamp = truncateToThreeDecimals(data.lumensPerLamp * ratio);
+    scaled.totalLumens = truncateToThreeDecimals(scaled.lumensPerLamp * scaled.numberOfLamps);
     
     // Scale candela values linearly
     scaled.candelaValues = data.candelaValues.map(
-      horizontalSlice => horizontalSlice.map(value => value * ratio)
+      horizontalSlice => horizontalSlice.map(value => truncateToThreeDecimals(value * ratio))
     );
     
     // Update only the scaled dimension, others stay the same
     if (dimension === 'length') {
-      scaled.length = newValue;
+      scaled.length = truncateToThreeDecimals(newValue);
     } else if (dimension === 'width') {
-      scaled.width = newValue;
+      scaled.width = truncateToThreeDecimals(newValue);
     } else {
-      scaled.height = newValue;
+      scaled.height = truncateToThreeDecimals(newValue);
     }
     
     return {

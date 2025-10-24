@@ -4,7 +4,7 @@ import { iesGenerator } from '../services/iesGenerator';
 import { iesParser } from '../services/iesParser';
 import { photometricCalculator } from '../services/calculator';
 import { saveAs } from 'file-saver';
-import type { IESMetadata, PhotometricData } from '../types/ies.types';
+import type { IESMetadata, PhotometricData, IESFile } from '../types/ies.types';
 import { FileUploadScreen } from '../components/unified/FileUploadScreen';
 import { FileHeader } from '../components/unified/FileHeader';
 import { OverviewTab } from '../components/unified/OverviewTab';
@@ -37,11 +37,20 @@ export function UnifiedPage() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'info' | 'error'>('success');
+  const [downloadFilename, setDownloadFilename] = useState<string>('');
 
   useEffect(() => {
     if (currentFile) {
       setLocalData({ ...currentFile.metadata, ...editedData });
       setLocalPhotometricData({ ...currentFile.photometricData, ...editedPhotometricData });
+      
+      // Initialize download filename from LUMCAT or fallback to current filename
+      const lumcat = currentFile.metadata.luminaireCatalogNumber;
+      if (lumcat) {
+        setDownloadFilename(lumcat.endsWith('.ies') ? lumcat : `${lumcat}.ies`);
+      } else {
+        setDownloadFilename(currentFile.fileName.replace(/\.(ies|IES)$/, '_edited.ies'));
+      }
     }
   }, [currentFile, editedData, editedPhotometricData]);
 
@@ -121,10 +130,28 @@ export function UnifiedPage() {
 
   const handleDownload = () => {
     if (!currentFile) return;
-    const iesContent = iesGenerator.generate(currentFile);
+    
+    // Create a merged file with all edits applied
+    const fileToGenerate: IESFile = {
+      ...currentFile,
+      metadata: { ...currentFile.metadata, ...editedData },
+      photometricData: { ...currentFile.photometricData, ...editedPhotometricData }
+    };
+    
+    // Auto-save any unsaved changes before downloading
+    if (isDirty) {
+      applyEdits();
+      showToastMessage('Changes auto-saved before download', 'info');
+    }
+    
+    // Generate IES content with the merged data
+    const iesContent = iesGenerator.generate(fileToGenerate);
     const blob = new Blob([iesContent], { type: 'text/plain;charset=utf-8' });
-    const filename = currentFile.fileName.replace(/\.(ies|IES)$/, '_edited.ies');
+    
+    // Ensure filename has .ies extension
+    const filename = downloadFilename.endsWith('.ies') ? downloadFilename : `${downloadFilename}.ies`;
     saveAs(blob, filename);
+    showToastMessage(`Downloaded as ${filename}`, 'success');
   };
 
   const handleTabChange = (tab: 'overview' | 'edit' | 'charts' | '3d') => {
@@ -155,9 +182,11 @@ export function UnifiedPage() {
         fileName={currentFile.fileName}
         activeTab={activeTab}
         isDirty={isDirty}
+        downloadFilename={downloadFilename}
         onFileSelect={handleFileSelect}
         onTabChange={handleTabChange}
         onDownload={handleDownload}
+        onDownloadFilenameChange={setDownloadFilename}
         onSave={handleSave}
         onReset={handleReset}
       />
