@@ -13,8 +13,9 @@ export function BatchMetadataEditorPage() {
   const [editingCell, setEditingCell] = useState<{row: number, field: keyof CSVRow} | null>(null);
   const [processing, setProcessing] = useState(false);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
-  const [useOriginalFilename, setUseOriginalFilename] = useState(true);
+  const [useOriginalFilename, setUseOriginalFilename] = useState(false);
   const [catalogNumberSource, setCatalogNumberSource] = useState<'luminaire' | 'lamp'>('luminaire');
+  const [useImperial, setUseImperial] = useState(false); // Toggle between meters and feet
   
   const csvHeaders: (keyof CSVRow)[] = [
     'filename',
@@ -33,6 +34,24 @@ export function BatchMetadataEditorPage() {
     'width',
     'height'
   ];
+
+  // Conversion helpers
+  const metersToFeet = (meters: number) => meters * 3.28084;
+  const feetToMeters = (feet: number) => feet / 3.28084;
+  
+  // Display values based on unit toggle
+  const getDisplayValue = (metersStr: string) => {
+    const meters = parseFloat(metersStr);
+    if (isNaN(meters)) return metersStr;
+    return useImperial ? metersToFeet(meters).toFixed(4) : meters;
+  };
+  
+  const parseInputValue = (value: string) => {
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    // Convert to meters for storage
+    return useImperial ? feetToMeters(num).toFixed(4) : num.toFixed(4);
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -245,14 +264,15 @@ export function BatchMetadataEditorPage() {
         let newFilename = file.fileName;
         
         if (!useOriginalFilename) {
-          // Use catalog number for filename
+          // Use catalog number for filename with fallback to original
           const catalogNumber = catalogNumberSource === 'luminaire'
             ? updatedFile.metadata.luminaireCatalogNumber
             : updatedFile.metadata.lampCatalogNumber;
           
-          if (catalogNumber) {
-            newFilename = `${catalogNumber}.ies`;
+          if (catalogNumber && catalogNumber.trim() !== '') {
+            newFilename = catalogNumber.endsWith('.ies') ? catalogNumber : `${catalogNumber}.ies`;
           }
+          // If no catalog number exists, keep original filename as fallback
         }
 
         zip.file(newFilename, iesContent);
@@ -382,20 +402,20 @@ export function BatchMetadataEditorPage() {
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input
                   type="radio"
+                  checked={!useOriginalFilename}
+                  onChange={() => setUseOriginalFilename(false)}
+                  className="text-blue-600 focus:ring-blue-500"
+                />
+                Use Catalog Number (fallback to original if not available)
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="radio"
                   checked={useOriginalFilename}
                   onChange={() => setUseOriginalFilename(true)}
                   className="text-blue-600 focus:ring-blue-500"
                 />
                 Use Original Filename
-              </label>
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="radio"
-                  checked={!useOriginalFilename}
-                  onChange={() => setUseOriginalFilename(false)}
-                  className="text-blue-600 focus:ring-blue-500"
-                />
-                Use Catalog Number
               </label>
             </div>
             
@@ -490,14 +510,36 @@ export function BatchMetadataEditorPage() {
         <div className="bg-white p-6 rounded-lg shadow-sm">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-gray-900">Metadata Editor</h2>
-            <button
-              onClick={swapLengthWidth}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-              title="Swap Length and Width values for all files"
-            >
-              <ArrowLeftRight className="w-4 h-4" />
-              Swap Length ⇄ Width
-            </button>
+            <div className="flex items-center gap-4">
+              {/* Unit Toggle */}
+              <div className="flex items-center gap-2 text-sm">
+                <span className={!useImperial ? 'font-semibold text-blue-600' : 'text-gray-600'}>Meters</span>
+                <button
+                  onClick={() => setUseImperial(!useImperial)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    useImperial ? 'bg-blue-600' : 'bg-gray-300'
+                  }`}
+                  title="Toggle between meters and feet"
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      useImperial ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className={useImperial ? 'font-semibold text-blue-600' : 'text-gray-600'}>Feet</span>
+              </div>
+              
+              {/* Swap Button */}
+              <button
+                onClick={swapLengthWidth}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                title="Swap Length and Width values for all files"
+              >
+                <ArrowLeftRight className="w-4 h-4" />
+                Swap Length ⇄ Width
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -507,7 +549,7 @@ export function BatchMetadataEditorPage() {
                     let displayHeader = header.replace(/([A-Z])/g, ' $1').trim();
                     // Add unit labels for dimension and CCT fields
                     if (header === 'length' || header === 'width' || header === 'height') {
-                      displayHeader += ' (m)';
+                      displayHeader += useImperial ? ' (ft)' : ' (m)';
                     } else if (header === 'cct') {
                       displayHeader = 'CCT (K)';
                     } else if (header === 'nearField') {
@@ -527,47 +569,55 @@ export function BatchMetadataEditorPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {csvData.map((row, rowIndex) => (
                   <tr key={rowIndex}>
-                    {csvHeaders.map((header) => (
-                      <td key={header} className="px-4 py-2">
-                        {editingCell?.row === rowIndex && editingCell?.field === header ? (
-                          header === 'nearField' ? (
-                            <select
-                              value={row[header] || ''}
-                              onChange={(e) => updateCell(rowIndex, header, e.target.value)}
-                              onBlur={() => setEditingCell(null)}
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              autoFocus
-                            >
-                              <option value="">None</option>
-                              <option value="1">1 - Point</option>
-                              <option value="2">2 - Linear</option>
-                              <option value="3">3 - Area</option>
-                            </select>
+                    {csvHeaders.map((header) => {
+                      const isDimensionField = header === 'length' || header === 'width' || header === 'height';
+                      const displayValue = isDimensionField && row[header] ? getDisplayValue(row[header]) : row[header];
+                      
+                      return (
+                        <td key={header} className="px-4 py-2">
+                          {editingCell?.row === rowIndex && editingCell?.field === header ? (
+                            header === 'nearField' ? (
+                              <select
+                                value={row[header] || ''}
+                                onChange={(e) => updateCell(rowIndex, header, e.target.value)}
+                                onBlur={() => setEditingCell(null)}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                autoFocus
+                              >
+                                <option value="">None</option>
+                                <option value="1">1 - Point</option>
+                                <option value="2">2 - Linear</option>
+                                <option value="3">3 - Area</option>
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                value={isDimensionField ? getDisplayValue(row[header] || '0') : (row[header] || '')}
+                                onChange={(e) => {
+                                  const newValue = isDimensionField ? parseInputValue(e.target.value) : e.target.value;
+                                  updateCell(rowIndex, header, newValue);
+                                }}
+                                onBlur={() => setEditingCell(null)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    setEditingCell(null);
+                                  }
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                autoFocus
+                              />
+                            )
                           ) : (
-                            <input
-                              type="text"
-                              value={row[header] || ''}
-                              onChange={(e) => updateCell(rowIndex, header, e.target.value)}
-                              onBlur={() => setEditingCell(null)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  setEditingCell(null);
-                                }
-                              }}
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              autoFocus
-                            />
-                          )
-                        ) : (
-                          <div
-                            onClick={() => setEditingCell({row: rowIndex, field: header})}
-                            className="px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm"
-                          >
-                            {row[header] || '-'}
-                          </div>
-                        )}
-                      </td>
-                    ))}
+                            <div
+                              onClick={() => setEditingCell({row: rowIndex, field: header})}
+                              className="px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm"
+                            >
+                              {displayValue || '-'}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

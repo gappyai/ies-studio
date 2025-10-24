@@ -1,12 +1,14 @@
-import { Save, RotateCcw, Download, Edit3, Eye, FileText, BarChart3, Box } from 'lucide-react';
+import { Save, RotateCcw, Download, Edit3, Eye, FileText, BarChart3, Box, Pencil } from 'lucide-react';
 
 interface FileHeaderProps {
   fileName: string;
   activeTab: 'overview' | 'edit' | 'charts' | '3d';
   isDirty: boolean;
+  downloadFilename: string;
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onTabChange: (tab: 'overview' | 'edit' | 'charts' | '3d') => void;
   onDownload: () => void;
+  onDownloadFilenameChange: (filename: string) => void;
   onSave: () => void;
   onReset: () => void;
 }
@@ -15,9 +17,11 @@ export function FileHeader({
   fileName,
   activeTab,
   isDirty,
+  downloadFilename,
   onFileSelect,
   onTabChange,
   onDownload,
+  onDownloadFilenameChange,
   onSave,
   onReset
 }: FileHeaderProps) {
@@ -45,7 +49,22 @@ export function FileHeader({
           </div>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          {/* Editable Download Filename */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-gray-600">Download as:</label>
+            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+              <Pencil className="w-3 h-3 text-gray-400" />
+              <input
+                type="text"
+                value={downloadFilename}
+                onChange={(e) => onDownloadFilenameChange(e.target.value)}
+                className="bg-transparent text-sm text-gray-700 outline-none w-48"
+                placeholder="Download filename"
+              />
+            </div>
+          </div>
+          
           <button
             onClick={onDownload}
             className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
