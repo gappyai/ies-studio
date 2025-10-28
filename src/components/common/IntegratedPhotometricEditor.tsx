@@ -21,6 +21,8 @@ export function IntegratedPhotometricEditor({
   const [cctValue, setCctValue] = useState('');
   const [cctMultiplier, setCctMultiplier] = useState('1.0');
   const [wattageValue, setWattageValue] = useState(currentPhotometricData.inputWatts.toFixed(1));
+  const [lumensValue, setLumensValue] = useState(currentPhotometricData.totalLumens.toFixed(0));
+  const [autoAdjustWattage, setAutoAdjustWattage] = useState(false);
   const [lengthValue, setLengthValue] = useState('');
   const [useImperial, setUseImperial] = useState(false); // Toggle between meters and feet
 
@@ -81,6 +83,28 @@ export function IntegratedPhotometricEditor({
     
     const efficacy = photometricCalculator.calculateEfficacy(result.scaledPhotometricData.totalLumens, newWattage);
     onToast?.(`Wattage updated to ${newWattage}W • ${result.scaledPhotometricData.totalLumens.toFixed(1)} lm • ${efficacy.toFixed(1)} lm/W`, 'success');
+  };
+
+  const handleLumensApply = () => {
+    const newLumens = parseFloat(lumensValue);
+    if (isNaN(newLumens) || newLumens <= 0) {
+      onToast?.('Please enter a valid lumens value', 'error');
+      return;
+    }
+    
+    const result = photometricCalculator.scaleByLumens(currentPhotometricData, newLumens, autoAdjustWattage);
+    onBulkUpdate(result.scaledPhotometricData);
+    
+    // Update wattage value in UI if it was adjusted
+    if (autoAdjustWattage) {
+      setWattageValue(result.scaledPhotometricData.inputWatts.toFixed(1));
+    }
+    
+    const efficacy = photometricCalculator.calculateEfficacy(newLumens, result.scaledPhotometricData.inputWatts);
+    const message = autoAdjustWattage
+      ? `Lumens updated to ${newLumens.toFixed(1)} lm • ${result.scaledPhotometricData.inputWatts.toFixed(1)}W • ${efficacy.toFixed(1)} lm/W`
+      : `Lumens updated to ${newLumens.toFixed(1)} lm • Efficacy: ${efficacy.toFixed(1)} lm/W`;
+    onToast?.(message, 'success');
   };
 
   const handleLengthScale = () => {
@@ -308,6 +332,51 @@ export function IntegratedPhotometricEditor({
             className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Apply Wattage
+          </button>
+        </div>
+      </div>
+
+      {/* Lumens with Auto-Adjust Wattage */}
+      <div className="bg-white p-6 rounded-lg shadow-sm">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Total Lumens</h2>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Total Lumens (lm)</label>
+            <input
+              type="number"
+              value={lumensValue}
+              onChange={(e) => setLumensValue(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              step="1"
+              placeholder={`Current: ${currentPhotometricData.totalLumens.toFixed(0)} lm`}
+            />
+          </div>
+          
+          <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+            <input
+              type="checkbox"
+              id="autoAdjustWattage"
+              checked={autoAdjustWattage}
+              onChange={(e) => setAutoAdjustWattage(e.target.checked)}
+              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <label htmlFor="autoAdjustWattage" className="text-sm text-gray-700 cursor-pointer">
+              Auto-adjust wattage to maintain efficacy
+            </label>
+          </div>
+          
+          <p className="text-xs text-gray-600">
+            {autoAdjustWattage
+              ? 'Candela values and wattage will be scaled proportionally to maintain the same efficacy (lm/W)'
+              : 'Only candela values will be scaled. Wattage remains unchanged, resulting in different efficacy'}
+          </p>
+          
+          <button
+            onClick={handleLumensApply}
+            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Apply Lumens
           </button>
         </div>
       </div>

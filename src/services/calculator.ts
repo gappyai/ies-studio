@@ -61,6 +61,34 @@ export class PhotometricCalculator {
   }
 
   /**
+   * Scale photometric data by lumens change
+   * Scales candela values proportionally to maintain consistency
+   */
+  scaleByLumens(data: PhotometricData, newTotalLumens: number, adjustWattage: boolean = false): ScalingResult {
+    const lumensRatio = truncateToThreeDecimals(newTotalLumens / data.totalLumens);
+    const scaled = { ...data };
+    
+    // Scale lumens
+    scaled.totalLumens = truncateToThreeDecimals(newTotalLumens);
+    scaled.lumensPerLamp = truncateToThreeDecimals(newTotalLumens / data.numberOfLamps);
+    
+    // Scale candela values proportionally
+    scaled.candelaValues = data.candelaValues.map(
+      horizontalSlice => horizontalSlice.map(value => truncateToThreeDecimals(value * lumensRatio))
+    );
+    
+    // Optionally adjust wattage to maintain efficacy
+    if (adjustWattage) {
+      scaled.inputWatts = truncateToThreeDecimals(data.inputWatts * lumensRatio);
+    }
+    
+    return {
+      scaledPhotometricData: scaled,
+      scalingFactor: lumensRatio
+    };
+  }
+
+  /**
    * Scale photometric data by length change (Type 4)
    * For linear fixtures only
    */
