@@ -28,13 +28,6 @@ export function BatchLengthEditorPage() {
   const [editingCell, setEditingCell] = useState<number | null>(null);
   const [processing, setProcessing] = useState(false);
 
-  const determineScalingDimension = (length: number, width: number, height: number): 'length' | 'width' | 'height' => {
-    const max = Math.max(length, width, height);
-    if (max === length) return 'length';
-    if (max === width) return 'width';
-    return 'height';
-  };
-
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -62,12 +55,10 @@ export function BatchLengthEditorPage() {
         const originalLength = parsedFile.photometricData.length;
         const originalWidth = parsedFile.photometricData.width;
         const originalHeight = parsedFile.photometricData.height;
-        const scalingDimension = determineScalingDimension(originalLength, originalWidth, originalHeight);
+        const scalingDimension = 'length'; // Default to length
 
-        // Get the actual scaling dimension value
-        const scalingDimensionValue = scalingDimension === 'length' ? originalLength :
-                                       scalingDimension === 'width' ? originalWidth :
-                                       originalHeight;
+        // Use length as default scaling dimension value
+        const scalingDimensionValue = originalLength;
 
         newLengthData.push({
           filename: file.name,
@@ -181,6 +172,34 @@ export function BatchLengthEditorPage() {
     };
   };
 
+  const updateScalingDimension = (rowIndex: number, dimension: 'length' | 'width') => {
+    const batchFile = batchFiles[rowIndex];
+    if (!batchFile) return;
+
+    const newData = [...lengthData];
+    const row = newData[rowIndex];
+    
+    // Get the value of the newly selected dimension
+    const newScalingValue = dimension === 'length'
+      ? row.originalLength
+      : row.originalWidth;
+    
+    // Update the row with new dimension and reset target to current value
+    newData[rowIndex] = {
+      ...row,
+      scalingDimension: dimension,
+      targetLength: newScalingValue.toFixed(4),
+      scaleFactor: 1.0,
+      previewLength: row.originalLength,
+      previewWidth: row.originalWidth,
+      previewHeight: row.originalHeight,
+      previewWattage: batchFile.photometricData.inputWatts,
+      previewLumens: batchFile.photometricData.totalLumens
+    };
+    
+    setLengthData(newData);
+  };
+
   const updateLength = (rowIndex: number, value: string) => {
     const batchFile = batchFiles[rowIndex];
     if (!batchFile) return;
@@ -259,21 +278,21 @@ export function BatchLengthEditorPage() {
           <p className="text-gray-600 mt-1">
             Update length for multiple IES files with automatic photometric scaling
           </p>
-          <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-start gap-2">
-              <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-blue-800">
-                <p className="font-semibold mb-1">How scaling works for linear LED fixtures:</p>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>The longest dimension is automatically detected and used for scaling</li>
-                  <li>Only the longest dimension changes; other dimensions remain the same</li>
-                  <li>Wattage and lumens scale LINEARLY (1m → 2m means 2× power and output)</li>
-                  <li>All candela values scale linearly with the length</li>
-                  <li>Example: 1m 10W 1000lm → 2m 20W 2000lm (doubling, not quadrupling)</li>
-                </ul>
-              </div>
-            </div>
-          </div>
+         <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+           <div className="flex items-start gap-2">
+             <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+             <div className="text-sm text-blue-800">
+               <p className="font-semibold mb-1">How scaling works for linear LED fixtures:</p>
+               <ul className="list-disc list-inside space-y-1">
+                 <li>Select the dimension to scale (Length or Width) using the dropdown</li>
+                 <li>Only the selected dimension changes; other dimensions remain the same</li>
+                 <li>Wattage and lumens scale LINEARLY (1m → 2m means 2× power and output)</li>
+                 <li>All candela values scale linearly with the selected dimension</li>
+                 <li>Example: 1m 10W 1000lm → 2m 20W 2000lm (doubling, not quadrupling)</li>
+               </ul>
+             </div>
+           </div>
+         </div>
         </div>
         <button
           onClick={clearAll}
@@ -367,9 +386,7 @@ export function BatchLengthEditorPage() {
             {batchFiles.map((file, index) => {
               const lengthRow = lengthData[index];
               const originalValue = lengthRow ? (
-                lengthRow.scalingDimension === 'length' ? lengthRow.originalLength :
-                lengthRow.scalingDimension === 'width' ? lengthRow.originalWidth :
-                lengthRow.originalHeight
+                lengthRow.scalingDimension === 'length' ? lengthRow.originalLength : lengthRow.originalWidth
               ) : 0;
               const hasChanged = lengthRow && parseFloat(lengthRow.targetLength) !== originalValue;
               return (
@@ -380,12 +397,10 @@ export function BatchLengthEditorPage() {
                   </div>
                   {lengthRow && (
                     <div className="text-xs text-gray-600">
-                      <p className="font-medium text-gray-700 mb-1">
-                        Scaling by: <span className="text-blue-600">{lengthRow.scalingDimension}</span>
-                      </p>
-                      <p>Original: {(lengthRow.scalingDimension === 'length' ? lengthRow.originalLength :
-                                     lengthRow.scalingDimension === 'width' ? lengthRow.originalWidth :
-                                     lengthRow.originalHeight).toFixed(3)}m</p>
+                     <p className="font-medium text-gray-700 mb-1">
+                       Scaling by: <span className="text-blue-600 capitalize">{lengthRow.scalingDimension}</span>
+                     </p>
+                     <p>Original: {(lengthRow.scalingDimension === 'length' ? lengthRow.originalLength : lengthRow.originalWidth).toFixed(3)}m</p>
                       <p>{file.photometricData.inputWatts.toFixed(1)}W, {file.photometricData.totalLumens.toFixed(0)} lm</p>
                       {hasChanged && (
                         <>
@@ -415,7 +430,7 @@ export function BatchLengthEditorPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Filename</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Scaling Dimension</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dimension to Scale</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original (m)</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target (m)</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-blue-50 border-l-2 border-blue-300">
@@ -446,22 +461,23 @@ export function BatchLengthEditorPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {lengthData.map((row, rowIndex) => {
-                  const originalValue = row.scalingDimension === 'length' ? row.originalLength :
-                                       row.scalingDimension === 'width' ? row.originalWidth :
-                                       row.originalHeight;
+                  const originalValue = row.scalingDimension === 'length' ? row.originalLength : row.originalWidth;
                   const hasChanged = parseFloat(row.targetLength) !== originalValue;
                   return (
                     <tr key={rowIndex} className={hasChanged ? 'bg-blue-50' : ''}>
                       <td className="px-4 py-2 text-sm text-gray-900">{row.filename}</td>
                       <td className="px-4 py-2 text-sm">
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
-                          {row.scalingDimension}
-                        </span>
+                        <select
+                          value={row.scalingDimension}
+                          onChange={(e) => updateScalingDimension(rowIndex, e.target.value as 'length' | 'width')}
+                          className="px-2 py-1 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="length">Length</option>
+                          <option value="width">Width</option>
+                        </select>
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-600">
-                        {(row.scalingDimension === 'length' ? row.originalLength :
-                          row.scalingDimension === 'width' ? row.originalWidth :
-                          row.originalHeight).toFixed(4)}
+                        {(row.scalingDimension === 'length' ? row.originalLength : row.originalWidth).toFixed(4)}
                       </td>
                       <td className="px-4 py-2">
                         {editingCell === rowIndex ? (

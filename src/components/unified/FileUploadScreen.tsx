@@ -95,18 +95,6 @@ export function FileUploadScreen({
             <p className="text-sm text-gray-600">Charts and 3D photometric visualization</p>
           </div>
         </div>
-
-        {/* Batch Processing CTA */}
-        <div className="mt-12 text-center">
-          <p className="text-gray-600 mb-4">Need to process multiple files?</p>
-          <a
-            href="#/batch"
-            className="inline-flex items-center gap-2 px-6 py-3 border-2 border-primary text-primary rounded-lg hover:bg-blue-50 transition-colors font-medium"
-          >
-            <Settings className="w-5 h-5" />
-            Go to Batch Processing
-          </a>
-        </div>
       </div>
     </div>
   );

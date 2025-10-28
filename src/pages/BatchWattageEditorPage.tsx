@@ -12,6 +12,8 @@ interface WattageRow {
   originalWattage: number;
   newWattage: string;
   originalLumens: number;
+  newLumens: string;
+  previewWattage: number;
   previewLumens: number;
   previewEfficacy: number;
 }
@@ -19,7 +21,8 @@ interface WattageRow {
 export function BatchWattageEditorPage() {
   const { batchFiles, addBatchFiles, clearBatchFiles } = useIESFileStore();
   const [wattageData, setWattageData] = useState<WattageRow[]>([]);
-  const [editingCell, setEditingCell] = useState<number | null>(null);
+  const [editingCell, setEditingCell] = useState<{ row: number; field: 'wattage' | 'lumens' } | null>(null);
+  const [autoAdjustWattage, setAutoAdjustWattage] = useState(false);
   const [processing, setProcessing] = useState(false);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -55,6 +58,8 @@ export function BatchWattageEditorPage() {
           originalWattage,
           newWattage: originalWattage.toFixed(2),
           originalLumens,
+          newLumens: originalLumens.toFixed(0),
+          previewWattage: originalWattage,
           previewLumens: originalLumens,
           previewEfficacy: efficacy
         });
@@ -81,9 +86,10 @@ export function BatchWattageEditorPage() {
       
       const filenameIndex = headers.indexOf('filename');
       const wattageIndex = headers.indexOf('wattage');
+      const lumensIndex = headers.indexOf('lumens');
       
-      if (filenameIndex === -1 || wattageIndex === -1) {
-        alert('CSV must contain "filename" and "wattage" columns');
+      if (filenameIndex === -1) {
+        alert('CSV must contain "filename" column');
         return;
       }
 
@@ -94,11 +100,16 @@ export function BatchWattageEditorPage() {
         
         const values = lines[i].split(',').map(v => v.trim());
         const filename = values[filenameIndex];
-        const wattage = values[wattageIndex];
+        const wattage = wattageIndex !== -1 ? values[wattageIndex] : null;
+        const lumens = lumensIndex !== -1 ? values[lumensIndex] : null;
         
         const rowIndex = updatedData.findIndex(row => row.filename === filename);
-        if (rowIndex !== -1 && wattage && !isNaN(parseFloat(wattage))) {
-          updatedData[rowIndex] = updateWattagePreview(updatedData[rowIndex], wattage);
+        if (rowIndex !== -1) {
+          if (lumens && !isNaN(parseFloat(lumens))) {
+            updatedData[rowIndex] = updateLumensPreview(updatedData[rowIndex], lumens);
+          } else if (wattage && !isNaN(parseFloat(wattage))) {
+            updatedData[rowIndex] = updateWattagePreview(updatedData[rowIndex], wattage);
+          }
         }
       }
       
@@ -110,7 +121,7 @@ export function BatchWattageEditorPage() {
   const updateWattagePreview = (row: WattageRow, newWattage: string): WattageRow => {
     const wattage = parseFloat(newWattage);
     if (isNaN(wattage) || wattage <= 0) {
-      return { ...row, newWattage };
+      return { ...row, newWattage, previewWattage: row.originalWattage };
     }
 
     // Calculate new lumens maintaining same efficacy
@@ -120,8 +131,33 @@ export function BatchWattageEditorPage() {
     return {
       ...row,
       newWattage,
+      newLumens: previewLumens.toFixed(0),
+      previewWattage: wattage,
       previewLumens,
       previewEfficacy: originalEfficacy
+    };
+  };
+
+  const updateLumensPreview = (row: WattageRow, newLumens: string): WattageRow => {
+    const lumens = parseFloat(newLumens);
+    if (isNaN(lumens) || lumens <= 0) {
+      return { ...row, newLumens, previewLumens: row.originalLumens };
+    }
+
+    // Calculate new wattage if auto-adjust is enabled, otherwise keep original
+    const previewWattage = autoAdjustWattage
+      ? (lumens / row.originalLumens) * row.originalWattage
+      : row.originalWattage;
+    
+    const previewEfficacy = lumens / previewWattage;
+
+    return {
+      ...row,
+      newLumens,
+      newWattage: previewWattage.toFixed(2),
+      previewWattage,
+      previewLumens: lumens,
+      previewEfficacy
     };
   };
 
@@ -131,17 +167,24 @@ export function BatchWattageEditorPage() {
     setWattageData(newData);
   };
 
+  const updateLumens = (rowIndex: number, value: string) => {
+    const newData = [...wattageData];
+    newData[rowIndex] = updateLumensPreview(newData[rowIndex], value);
+    setWattageData(newData);
+  };
+
   const exportCSV = () => {
-    // Only export input columns, not calculated preview values
-    const headers = ['filename', 'wattage'];
+    // Export both wattage and lumens columns
+    const headers = ['filename', 'wattage', 'lumens'];
     const rows = wattageData.map(row => [
       row.filename,
-      row.newWattage
+      row.newWattage,
+      row.newLumens
     ]);
     
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    saveAs(blob, 'batch_wattage_template.csv');
+    saveAs(blob, 'batch_editing_template.csv');
   };
 
   const downloadProcessedFiles = async () => {
@@ -155,15 +198,28 @@ export function BatchWattageEditorPage() {
         const wattageRow = wattageData.find(row => row.filename === file.fileName);
         if (!wattageRow) continue;
 
-        const newWattage = parseFloat(wattageRow.newWattage);
-        if (isNaN(newWattage) || newWattage <= 0) continue;
-
         let updatedFile = { ...file };
         
-        // Apply wattage scaling
-        if (Math.abs(newWattage - file.photometricData.inputWatts) > 0.01) {
+        // Check if lumens changed
+        const newLumens = parseFloat(wattageRow.newLumens);
+        const lumensChanged = !isNaN(newLumens) && Math.abs(newLumens - file.photometricData.totalLumens) > 0.1;
+        
+        // Check if wattage changed
+        const newWattage = parseFloat(wattageRow.newWattage);
+        const wattageChanged = !isNaN(newWattage) && Math.abs(newWattage - file.photometricData.inputWatts) > 0.01;
+
+        if (lumensChanged) {
+          // Apply lumens scaling
+          const result = photometricCalculator.scaleByLumens(
+            updatedFile.photometricData,
+            newLumens,
+            autoAdjustWattage
+          );
+          updatedFile.photometricData = result.scaledPhotometricData;
+        } else if (wattageChanged) {
+          // Apply wattage scaling (legacy behavior)
           const result = photometricCalculator.scaleByWattage(
-            updatedFile.photometricData, 
+            updatedFile.photometricData,
             newWattage
           );
           updatedFile.photometricData = result.scaledPhotometricData;
@@ -174,7 +230,7 @@ export function BatchWattageEditorPage() {
       }
 
       const blob = await zip.generateAsync({ type: 'blob' });
-      saveAs(blob, 'wattage_scaled_ies_files.zip');
+      saveAs(blob, 'batch_edited_ies_files.zip');
     } catch (error) {
       alert('Error processing files: ' + (error as Error).message);
     } finally {
@@ -191,14 +247,14 @@ export function BatchWattageEditorPage() {
     <div className="p-8 max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Batch Wattage Editor</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Batch Wattage & Lumens Editor</h1>
           <p className="text-gray-600 mt-1">
-            Update wattage for multiple IES files with automatic photometric scaling
+            Update wattage or lumens for multiple IES files with automatic photometric scaling
           </p>
           <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-sm text-blue-800">
-              <strong>How it works:</strong> When wattage changes, all candela values and total lumens are scaled 
-              proportionally while maintaining the same efficacy (lm/W).
+              <strong>How it works:</strong> Edit either wattage or lumens. When lumens changes, candela values are
+              scaled proportionally. Enable auto-adjust to also scale wattage and maintain efficacy (lm/W).
             </p>
           </div>
         </div>
@@ -250,10 +306,10 @@ export function BatchWattageEditorPage() {
             <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-gray-400 cursor-pointer">
               <FileText className="w-12 h-12 mx-auto mb-4 text-gray-600" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Upload CSV with new wattages
+                Upload CSV with new values
               </h3>
               <p className="text-sm text-gray-600">
-                CSV with columns: filename, wattage
+                CSV with columns: filename, wattage, lumens
               </p>
             </div>
           </label>
@@ -264,7 +320,27 @@ export function BatchWattageEditorPage() {
       {wattageData.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-4 items-center">
+            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <input
+                type="checkbox"
+                id="batchAutoAdjustWattage"
+                checked={autoAdjustWattage}
+                onChange={(e) => {
+                  setAutoAdjustWattage(e.target.checked);
+                  // Recalculate all previews with new setting
+                  const updatedData = wattageData.map(row =>
+                    updateLumensPreview(row, row.newLumens)
+                  );
+                  setWattageData(updatedData);
+                }}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="batchAutoAdjustWattage" className="text-sm text-gray-700 cursor-pointer font-medium">
+                Auto-adjust wattage when editing lumens
+              </label>
+            </div>
+            
             <button
               onClick={exportCSV}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -301,9 +377,10 @@ export function BatchWattageEditorPage() {
                   </div>
                   <div className="text-xs text-gray-600">
                     <p>Original: {file.photometricData.inputWatts.toFixed(1)}W, {file.photometricData.totalLumens.toFixed(0)} lm</p>
-                    {wattageRow && parseFloat(wattageRow.newWattage) !== wattageRow.originalWattage && (
+                    {wattageRow && (parseFloat(wattageRow.newWattage) !== wattageRow.originalWattage ||
+                                    parseFloat(wattageRow.newLumens) !== wattageRow.originalLumens) && (
                       <p className="text-blue-600 font-medium mt-1">
-                        New: {parseFloat(wattageRow.newWattage).toFixed(1)}W, {wattageRow.previewLumens.toFixed(0)} lm
+                        New: {wattageRow.previewWattage.toFixed(1)}W, {wattageRow.previewLumens.toFixed(0)} lm
                       </p>
                     )}
                   </div>
@@ -317,7 +394,7 @@ export function BatchWattageEditorPage() {
       {/* Wattage Editor Table */}
       {wattageData.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Wattage Editor</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Wattage & Lumens Editor</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -325,7 +402,8 @@ export function BatchWattageEditorPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Filename</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original Wattage (W)</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">New Wattage (W)</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original Lumens</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original Lumens (lm)</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">New Lumens (lm)</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-blue-50 border-l-2 border-blue-300">
                     <div className="flex items-center gap-1">
                       <span>Preview Lumens</span>
@@ -342,13 +420,15 @@ export function BatchWattageEditorPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {wattageData.map((row, rowIndex) => {
-                  const hasChanged = parseFloat(row.newWattage) !== row.originalWattage;
+                  const wattageChanged = parseFloat(row.newWattage) !== row.originalWattage;
+                  const lumensChanged = parseFloat(row.newLumens) !== row.originalLumens;
+                  const hasChanged = wattageChanged || lumensChanged;
                   return (
                     <tr key={rowIndex} className={hasChanged ? 'bg-blue-50' : ''}>
                       <td className="px-4 py-2 text-sm text-gray-900">{row.filename}</td>
                       <td className="px-4 py-2 text-sm text-gray-600">{row.originalWattage.toFixed(2)}</td>
                       <td className="px-4 py-2">
-                        {editingCell === rowIndex ? (
+                        {editingCell?.row === rowIndex && editingCell?.field === 'wattage' ? (
                           <input
                             type="number"
                             step="0.01"
@@ -365,9 +445,9 @@ export function BatchWattageEditorPage() {
                           />
                         ) : (
                           <div
-                            onClick={() => setEditingCell(rowIndex)}
+                            onClick={() => setEditingCell({ row: rowIndex, field: 'wattage' })}
                             className={`px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm ${
-                              hasChanged ? 'font-medium text-blue-700' : 'text-gray-900'
+                              wattageChanged ? 'font-medium text-blue-700' : 'text-gray-900'
                             }`}
                           >
                             {parseFloat(row.newWattage).toFixed(2)}
@@ -375,7 +455,34 @@ export function BatchWattageEditorPage() {
                         )}
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-600">{row.originalLumens.toFixed(0)}</td>
-                      <td className={`px-4 py-2 text-sm bg-blue-50 border-l-2 border-blue-300 ${hasChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
+                      <td className="px-4 py-2">
+                        {editingCell?.row === rowIndex && editingCell?.field === 'lumens' ? (
+                          <input
+                            type="number"
+                            step="1"
+                            value={row.newLumens}
+                            onChange={(e) => updateLumens(rowIndex, e.target.value)}
+                            onBlur={() => setEditingCell(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                setEditingCell(null);
+                              }
+                            }}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            autoFocus
+                          />
+                        ) : (
+                          <div
+                            onClick={() => setEditingCell({ row: rowIndex, field: 'lumens' })}
+                            className={`px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm ${
+                              lumensChanged ? 'font-medium text-blue-700' : 'text-gray-900'
+                            }`}
+                          >
+                            {parseFloat(row.newLumens).toFixed(0)}
+                          </div>
+                        )}
+                      </td>
+                      <td className={`px-4 py-2 text-sm bg-blue-50 border-l-2 border-blue-300 ${lumensChanged ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
                         {row.previewLumens.toFixed(0)}
                       </td>
                       <td className="px-4 py-2 text-sm bg-blue-50 text-gray-600">{row.previewEfficacy.toFixed(1)}</td>
