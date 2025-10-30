@@ -15,7 +15,6 @@ export function BatchMetadataEditorPage() {
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [useOriginalFilename, setUseOriginalFilename] = useState(false);
   const [catalogNumberSource, setCatalogNumberSource] = useState<'luminaire' | 'lamp'>('luminaire');
-  const [useImperial, setUseImperial] = useState(false); // Toggle between meters and feet
   
   const csvHeaders: (keyof CSVRow)[] = [
     'filename',
@@ -35,22 +34,54 @@ export function BatchMetadataEditorPage() {
     'height'
   ];
 
+  // Determine current unit from first file (all should have same unit after toggle)
+  const currentUnitsType = batchFiles.length > 0 ? batchFiles[0].photometricData.unitsType : 2;
+  const useImperial = currentUnitsType === 1;
+
   // Conversion helpers
   const metersToFeet = (meters: number) => meters * 3.28084;
   const feetToMeters = (feet: number) => feet / 3.28084;
   
-  // Display values based on unit toggle
-  const getDisplayValue = (metersStr: string) => {
-    const meters = parseFloat(metersStr);
-    if (isNaN(meters)) return metersStr;
-    return useImperial ? metersToFeet(meters).toFixed(4) : meters;
+  // Dimensions in CSV are stored in the current unit system
+  const getDisplayValue = (valueStr: string) => {
+    const value = parseFloat(valueStr);
+    if (isNaN(value)) return valueStr;
+    return value.toFixed(3);
   };
   
   const parseInputValue = (value: string) => {
     const num = parseFloat(value);
     if (isNaN(num)) return value;
-    // Convert to meters for storage
-    return useImperial ? feetToMeters(num).toFixed(4) : num.toFixed(4);
+    return num.toFixed(3);
+  };
+
+  // Handle unit toggle
+  const handleUnitToggle = () => {
+    const newUnitsType = useImperial ? 2 : 1; // Toggle: 1=feet to 2=meters
+    const convertFunc = useImperial ? feetToMeters : metersToFeet;
+    
+    // Update all batch files
+    const updatedFiles = batchFiles.map(file => ({
+      ...file,
+      photometricData: {
+        ...file.photometricData,
+        unitsType: newUnitsType,
+        width: convertFunc(file.photometricData.width),
+        length: convertFunc(file.photometricData.length),
+        height: convertFunc(file.photometricData.height)
+      }
+    }));
+    
+    // Update CSV data
+    const updatedCsvData = csvData.map(row => ({
+      ...row,
+      length: row.length ? convertFunc(parseFloat(row.length)).toFixed(3) : row.length,
+      width: row.width ? convertFunc(parseFloat(row.width)).toFixed(3) : row.width,
+      height: row.height ? convertFunc(parseFloat(row.height)).toFixed(3) : row.height
+    }));
+    
+    addBatchFiles(updatedFiles);
+    setCsvData(updatedCsvData);
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,9 +122,10 @@ export function BatchMetadataEditorPage() {
           other: parsedFile.metadata.other || '',
           nearField: parsedFile.metadata.nearField || '',
           cct: parsedFile.metadata.colorTemperature?.toString() || '',
-          length: parsedFile.photometricData.length.toFixed(4),
-          width: parsedFile.photometricData.width.toFixed(4),
-          height: parsedFile.photometricData.height.toFixed(4)
+          // Store dimensions in their native units as per unitsType
+          length: parsedFile.photometricData.length.toFixed(3),
+          width: parsedFile.photometricData.width.toFixed(3),
+          height: parsedFile.photometricData.height.toFixed(3)
         };
 
         newCsvData.push(csvRow);
@@ -234,25 +266,25 @@ export function BatchMetadataEditorPage() {
             }
           }
           
-          // Update dimensions if provided (already in meters, set as-is)
+          // Update dimensions if provided (stored in current units)
           if (csvRow.length && csvRow.length.trim() !== '') {
-            const lengthM = parseFloat(csvRow.length);
-            if (!isNaN(lengthM)) {
-              updatedFile.photometricData.length = lengthM;
+            const length = parseFloat(csvRow.length);
+            if (!isNaN(length)) {
+              updatedFile.photometricData.length = length;
             }
           }
           
           if (csvRow.width && csvRow.width.trim() !== '') {
-            const widthM = parseFloat(csvRow.width);
-            if (!isNaN(widthM)) {
-              updatedFile.photometricData.width = widthM;
+            const width = parseFloat(csvRow.width);
+            if (!isNaN(width)) {
+              updatedFile.photometricData.width = width;
             }
           }
           
           if (csvRow.height && csvRow.height.trim() !== '') {
-            const heightM = parseFloat(csvRow.height);
-            if (!isNaN(heightM)) {
-              updatedFile.photometricData.height = heightM;
+            const height = parseFloat(csvRow.height);
+            if (!isNaN(height)) {
+              updatedFile.photometricData.height = height;
             }
           }
         }
@@ -383,7 +415,7 @@ export function BatchMetadataEditorPage() {
                 Upload CSV metadata file
               </h3>
               <p className="text-sm text-gray-600">
-                CSV with all fields shown in the table. Dimensions must be in meters.
+                CSV with all fields shown in the table. Dimensions must match current unit setting.
               </p>
             </div>
           </label>
@@ -482,29 +514,6 @@ export function BatchMetadataEditorPage() {
         </div>
       )}
 
-      {/* File List */}
-      {batchFiles.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Uploaded Files ({batchFiles.length})
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {batchFiles.map((file) => (
-              <div key={file.id} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <FileText className="w-5 h-5 text-gray-600" />
-                  <span className="font-medium text-sm text-gray-900 truncate">{file.fileName}</span>
-                </div>
-                <div className="text-xs text-gray-600">
-                  <p>{file.photometricData.totalLumens.toFixed(0)} lumens</p>
-                  <p>{file.metadata.manufacturer || 'No manufacturer'}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* CSV Editor */}
       {csvData.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow-sm">
@@ -515,11 +524,11 @@ export function BatchMetadataEditorPage() {
               <div className="flex items-center gap-2 text-sm">
                 <span className={!useImperial ? 'font-semibold text-blue-600' : 'text-gray-600'}>Meters</span>
                 <button
-                  onClick={() => setUseImperial(!useImperial)}
+                  onClick={handleUnitToggle}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                     useImperial ? 'bg-blue-600' : 'bg-gray-300'
                   }`}
-                  title="Toggle between meters and feet"
+                  title={`Switch to ${useImperial ? 'meters' : 'feet'} and convert all dimensions`}
                 >
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
