@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Upload, Download, FileText, Trash2, Info } from 'lucide-react';
+import { Upload, Download, FileText, Info } from 'lucide-react';
 import { useIESFileStore, type BatchFile } from '../store/iesFileStore';
 import { iesParser } from '../services/iesParser';
 import { iesGenerator } from '../services/iesGenerator';
 import { photometricCalculator } from '../services/calculator';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { BatchActionBar } from '../components/common/BatchActionBar';
 
 interface LengthRow {
   filename: string;
@@ -22,26 +23,29 @@ interface LengthRow {
   previewLumens: number;
 }
 
+interface CSVPreviewData {
+  filename: string;
+  targetLength: string;
+}
+
 export function BatchLengthEditorPage() {
   const { batchFiles, addBatchFiles, clearBatchFiles } = useIESFileStore();
   const [lengthData, setLengthData] = useState<LengthRow[]>([]);
   const [editingCell, setEditingCell] = useState<number | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [showCSVPreview, setShowCSVPreview] = useState(false);
+  const [pendingCSVData, setPendingCSVData] = useState<CSVPreviewData[]>([]);
 
-  // Determine current unit from first file
   const currentUnitsType = batchFiles.length > 0 ? batchFiles[0].photometricData.unitsType : 2;
   const useImperial = currentUnitsType === 1;
 
-  // Conversion helpers
   const metersToFeet = (meters: number) => meters * 3.28084;
   const feetToMeters = (feet: number) => feet / 3.28084;
 
-  // Handle unit toggle
   const handleUnitToggle = () => {
-    const newUnitsType = useImperial ? 2 : 1; // Toggle: 1=feet to 2=meters
+    const newUnitsType = useImperial ? 2 : 1;
     const convertFunc = useImperial ? feetToMeters : metersToFeet;
     
-    // Update all batch files
     const updatedFiles = batchFiles.map(file => ({
       ...file,
       photometricData: {
@@ -53,7 +57,6 @@ export function BatchLengthEditorPage() {
       }
     }));
     
-    // Update length data with converted values
     const updatedLengthData = lengthData.map(row => ({
       ...row,
       originalLength: convertFunc(row.originalLength),
@@ -96,9 +99,8 @@ export function BatchLengthEditorPage() {
         const originalLength = parsedFile.photometricData.length;
         const originalWidth = parsedFile.photometricData.width;
         const originalHeight = parsedFile.photometricData.height;
-        const scalingDimension = 'length'; // Default to length
+        const scalingDimension = 'length';
 
-        // Use length as default scaling dimension value
         const scalingDimensionValue = originalLength;
 
         newLengthData.push({
@@ -144,7 +146,7 @@ export function BatchLengthEditorPage() {
         return;
       }
 
-      const updatedData = [...lengthData];
+      const csvData: CSVPreviewData[] = [];
       
       for (let i = 1; i < lines.length; i++) {
         if (!lines[i].trim()) continue;
@@ -153,22 +155,36 @@ export function BatchLengthEditorPage() {
         const filename = values[filenameIndex];
         const targetLength = values[lengthIndex];
         
-        const rowIndex = updatedData.findIndex(row => row.filename === filename);
-        if (rowIndex !== -1 && targetLength && !isNaN(parseFloat(targetLength))) {
-          const batchFile = batchFiles.find(f => f.fileName === filename);
-          if (batchFile) {
-            updatedData[rowIndex] = updateLengthPreview(
-              updatedData[rowIndex], 
-              targetLength,
-              batchFile.photometricData
-            );
-          }
+        if (filename && targetLength) {
+          csvData.push({ filename, targetLength });
         }
       }
       
-      setLengthData(updatedData);
+      setPendingCSVData(csvData);
+      setShowCSVPreview(true);
     };
     reader.readAsText(file);
+  };
+
+  const applyCSVData = () => {
+    const updatedData = [...lengthData];
+    
+    for (const csvRow of pendingCSVData) {
+      const rowIndex = updatedData.findIndex(row => row.filename === csvRow.filename);
+      if (rowIndex !== -1 && csvRow.targetLength && !isNaN(parseFloat(csvRow.targetLength))) {
+        const batchFile = batchFiles.find(f => f.fileName === csvRow.filename);
+        if (batchFile) {
+          updatedData[rowIndex] = updateLengthPreview(
+            updatedData[rowIndex], 
+            csvRow.targetLength,
+            batchFile.photometricData
+          );
+        }
+      }
+    }
+    
+    setLengthData(updatedData);
+    setPendingCSVData([]);
   };
 
   const updateLengthPreview = (
@@ -181,7 +197,6 @@ export function BatchLengthEditorPage() {
       return { ...row, targetLength };
     }
 
-    // Determine which dimension to use as the scaling reference
     const scalingDimension = row.scalingDimension;
     const originalScalingValue = scalingDimension === 'length' ? row.originalLength :
                                  scalingDimension === 'width' ? row.originalWidth :
@@ -189,13 +204,10 @@ export function BatchLengthEditorPage() {
     
     const scaleFactor = newLength / originalScalingValue;
 
-    // For linear LED fixtures: Only scale the longest dimension, others stay the same
     const previewLength = scalingDimension === 'length' ? newLength : row.originalLength;
     const previewWidth = scalingDimension === 'width' ? newLength : row.originalWidth;
     const previewHeight = scalingDimension === 'height' ? newLength : row.originalHeight;
 
-    // Calculate scaled photometric values using the correct dimension
-    // newLength is already in the current unit system
     const scaled = photometricCalculator.scaleByDimension(
       photometricData,
       newLength,
@@ -221,12 +233,10 @@ export function BatchLengthEditorPage() {
     const newData = [...lengthData];
     const row = newData[rowIndex];
     
-    // Get the value of the newly selected dimension
     const newScalingValue = dimension === 'length'
       ? row.originalLength
       : row.originalWidth;
     
-    // Update the row with new dimension and reset target to current value
     newData[rowIndex] = {
       ...row,
       scalingDimension: dimension,
@@ -256,7 +266,6 @@ export function BatchLengthEditorPage() {
   };
 
   const exportCSV = () => {
-    // Only export input columns, not calculated preview values
     const headers = ['filename', 'targetLength'];
     const rows = lengthData.map(row => [
       row.filename,
@@ -285,8 +294,6 @@ export function BatchLengthEditorPage() {
 
         let updatedFile = { ...file };
         
-        // Apply dimension scaling with photometric calculations
-        // targetLength is already in the current unit system
         const result = photometricCalculator.scaleByDimension(
           updatedFile.photometricData,
           targetLength,
@@ -313,42 +320,57 @@ export function BatchLengthEditorPage() {
     setLengthData([]);
   };
 
+  const actionButtons = [
+    {
+      icon: <Upload className="w-4 h-4" />,
+      label: 'Upload CSV',
+      onClick: () => document.getElementById('csv-upload')?.click(),
+      variant: 'secondary' as const,
+      disabled: lengthData.length === 0
+    },
+    {
+      icon: <Download className="w-4 h-4" />,
+      label: 'Export CSV',
+      onClick: exportCSV,
+      variant: 'secondary' as const,
+      disabled: lengthData.length === 0
+    },
+    {
+      icon: <Download className="w-4 h-4" />,
+      label: 'Download Files',
+      onClick: downloadProcessedFiles,
+      variant: 'primary' as const,
+      disabled: processing || batchFiles.length === 0
+    }
+  ];
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Batch Length Editor</h1>
-          <p className="text-gray-600 mt-1">
-            Update length for multiple IES files with automatic photometric scaling
-          </p>
-         <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-           <div className="flex items-start gap-2">
-             <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-             <div className="text-sm text-blue-800">
-               <p className="font-semibold mb-1">How scaling works for linear LED fixtures:</p>
-               <ul className="list-disc list-inside space-y-1">
-                 <li>Select the dimension to scale (Length or Width) using the dropdown</li>
-                 <li>Only the selected dimension changes; other dimensions remain the same</li>
-                 <li>Wattage and lumens scale LINEARLY (1m → 2m means 2× power and output)</li>
-                 <li>All candela values scale linearly with the selected dimension</li>
-                 <li>Example: 1m 10W 1000lm → 2m 20W 2000lm (doubling, not quadrupling)</li>
-               </ul>
-             </div>
-           </div>
-         </div>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">Batch Length Editor</h1>
+        <p className="text-gray-600 mt-1">
+          Update length for multiple IES files with automatic photometric scaling
+        </p>
+        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-800">
+              <p className="font-semibold mb-1">How scaling works for linear LED fixtures:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Select the dimension to scale (Length or Width) using the dropdown</li>
+                <li>Only the selected dimension changes; other dimensions remain the same</li>
+                <li>Wattage and lumens scale LINEARLY (1m → 2m means 2× power and output)</li>
+                <li>All candela values scale linearly with the selected dimension</li>
+                <li>Example: 1m 10W 1000lm → 2m 20W 2000lm (doubling, not quadrupling)</li>
+              </ul>
+            </div>
+          </div>
         </div>
-        <button
-          onClick={clearAll}
-          className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
-        >
-          <Trash2 className="w-4 h-4" />
-          Clear All
-        </button>
       </div>
 
-      {/* Upload Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow-sm">
+      {/* Compact File Upload Section */}
+      {lengthData.length === 0 && (
+        <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Upload IES Files</h2>
           <label className="block">
             <input
@@ -372,35 +394,31 @@ export function BatchLengthEditorPage() {
             </div>
           </label>
         </div>
+      )}
 
-        <div className="bg-white p-6 rounded-lg shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Upload CSV with Target Lengths</h2>
-          <label className="block">
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleCSVUpload}
-              className="hidden"
-            />
-            <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-gray-400 cursor-pointer">
-              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-600" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Upload CSV with target lengths
-              </h3>
-              <p className="text-sm text-gray-600">
-                CSV with columns: filename, targetLength (must match current unit setting)
-              </p>
-            </div>
-          </label>
-        </div>
-      </div>
+      {/* Hidden CSV Upload Input */}
+      <input
+        id="csv-upload"
+        type="file"
+        accept=".csv"
+        onChange={handleCSVUpload}
+        className="hidden"
+      />
 
-      {/* Quick Actions */}
+      {/* Action Bar */}
       {lengthData.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
+        <BatchActionBar
+          actions={actionButtons}
+          onClear={clearAll}
+          fileCount={batchFiles.length}
+        />
+      )}
+
+      {/* Length Editor Table - Main Content */}
+      {lengthData.length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow-sm ">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">Quick Actions</h2>
-            {/* Unit Toggle */}
+            <h2 className="text-xl font-semibold text-gray-900">Length Editor</h2>
             <div className="flex items-center gap-2 text-sm">
               <span className={!useImperial ? 'font-semibold text-blue-600' : 'text-gray-600'}>Meters</span>
               <button
@@ -419,30 +437,7 @@ export function BatchLengthEditorPage() {
               <span className={useImperial ? 'font-semibold text-blue-600' : 'text-gray-600'}>Feet</span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-4">
-            <button
-              onClick={exportCSV}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              <Download className="w-4 h-4" />
-              Export CSV Template
-            </button>
-            <button
-              onClick={downloadProcessedFiles}
-              disabled={processing || batchFiles.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Download className="w-4 h-4" />
-              {processing ? 'Processing...' : 'Download Processed Files'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Length Editor Table */}
-      {lengthData.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Length Editor</h2>
+          
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -547,6 +542,75 @@ export function BatchLengthEditorPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Preview Dialog */}
+      {showCSVPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Preview CSV Data</h2>
+              <button
+                onClick={() => {
+                  setShowCSVPreview(false);
+                  setPendingCSVData([]);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-6">
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  Preview of {pendingCSVData.length} row{pendingCSVData.length !== 1 ? 's' : ''} from CSV. 
+                  Review the data and click "Apply Changes" to update your files.
+                </p>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 border border-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Filename</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Length</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {pendingCSVData.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm text-gray-900">{row.filename}</td>
+                        <td className="px-4 py-2 text-sm text-gray-900">{row.targetLength}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowCSVPreview(false);
+                  setPendingCSVData([]);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  applyCSVData();
+                  setShowCSVPreview(false);
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Apply Changes
+              </button>
+            </div>
           </div>
         </div>
       )}
