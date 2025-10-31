@@ -174,28 +174,6 @@ Present on all batch pages with:
 
 ---
 
-## Troubleshooting
-
-### CSV Upload Fails
-- Check filename column matches uploaded files exactly
-- Ensure CSV includes header row
-- Verify unit values are "meters", "feet", "m", or "ft"
-
-### Wrong Download Filename
-- Check Download Settings (Batch Metadata Editor)
-- Verify Luminaire/Lamp Catalog Number is populated
-- Use "Original Filename" option if catalog numbers are blank
-
-### Unexpected Photometric Values
-- **Metadata Editor**: Only changes metadata, not photometrics
-- **Wattage Editor**: Use for intensity changes maintaining distribution shape
-- **Length Editor**: Only for linear fixtures with 1D scaling
-
-### File Won't Parse
-- Ensure file is valid IES format
-- Check file extension is `.ies`
-- Verify file isn't corrupted or empty
-
 ---
 
 ## Quick Reference
