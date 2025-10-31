@@ -5,6 +5,7 @@ import type { PhotometricData } from '../../types/ies.types';
 
 interface IntegratedPhotometricEditorProps {
   currentPhotometricData: PhotometricData;
+  originalColorTemperature?: number;
   onPhotometricUpdate: (key: keyof PhotometricData, value: any) => void;
   onBulkUpdate: (updates: Partial<PhotometricData>) => void;
   onCCTUpdate: (cct: number) => void;
@@ -13,6 +14,7 @@ interface IntegratedPhotometricEditorProps {
 
 export function IntegratedPhotometricEditor({
   currentPhotometricData,
+  originalColorTemperature,
   onPhotometricUpdate,
   onBulkUpdate,
   onCCTUpdate,
@@ -22,7 +24,7 @@ export function IntegratedPhotometricEditor({
   const [cctMultiplier, setCctMultiplier] = useState('1.0');
   const [wattageValue, setWattageValue] = useState(currentPhotometricData.inputWatts.toFixed(1));
   const [lumensValue, setLumensValue] = useState(currentPhotometricData.totalLumens.toFixed(0));
-  const [autoAdjustWattage, setAutoAdjustWattage] = useState(false);
+  const [autoAdjustWattage, setAutoAdjustWattage] = useState(true);
   const [lengthValue, setLengthValue] = useState('');
   
   // Local editing state for dimensions to allow intermediate typing
@@ -38,6 +40,13 @@ export function IntegratedPhotometricEditor({
     setWattageValue(currentPhotometricData.inputWatts.toFixed(1));
     setLumensValue(currentPhotometricData.totalLumens.toFixed(0));
   }, [currentPhotometricData.inputWatts, currentPhotometricData.totalLumens]);
+
+  // Initialize CCT value from original color temperature
+  useEffect(() => {
+    if (originalColorTemperature && !cctValue) {
+      setCctValue(originalColorTemperature.toString());
+    }
+  }, [originalColorTemperature]);
 
   // Initialize unit toggle from IES file's unitsType (1=feet, 2=meters)
   const useImperial = currentPhotometricData.unitsType === 1;
@@ -376,13 +385,20 @@ export function IntegratedPhotometricEditor({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">CCT (Kelvin)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                CCT (Kelvin)
+                {originalColorTemperature && (
+                  <span className="ml-2 text-xs text-gray-500">
+                    (Original: {originalColorTemperature}K)
+                  </span>
+                )}
+              </label>
               <input
                 type="number"
                 value={cctValue}
                 onChange={(e) => setCctValue(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                placeholder="e.g., 4000"
+                placeholder={originalColorTemperature ? `${originalColorTemperature}` : "e.g., 4000"}
               />
             </div>
             <div>

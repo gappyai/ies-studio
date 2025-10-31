@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, Download, FileText, Info } from 'lucide-react';
+import { Upload, Download, Info } from 'lucide-react';
 import { useIESFileStore, type BatchFile } from '../store/iesFileStore';
 import { iesParser } from '../services/iesParser';
 import { iesGenerator } from '../services/iesGenerator';
@@ -23,18 +23,11 @@ interface LengthRow {
   previewLumens: number;
 }
 
-interface CSVPreviewData {
-  filename: string;
-  targetLength: string;
-}
-
 export function BatchLengthEditorPage() {
   const { batchFiles, addBatchFiles, clearBatchFiles } = useIESFileStore();
   const [lengthData, setLengthData] = useState<LengthRow[]>([]);
   const [editingCell, setEditingCell] = useState<number | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [showCSVPreview, setShowCSVPreview] = useState(false);
-  const [pendingCSVData, setPendingCSVData] = useState<CSVPreviewData[]>([]);
 
   const currentUnitsType = batchFiles.length > 0 ? batchFiles[0].photometricData.unitsType : 2;
   const useImperial = currentUnitsType === 1;
@@ -126,65 +119,6 @@ export function BatchLengthEditorPage() {
     } finally {
       setProcessing(false);
     }
-  };
-
-  const handleCSVUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const csvContent = e.target?.result as string;
-      const lines = csvContent.split('\n');
-      const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
-      
-      const filenameIndex = headers.indexOf('filename');
-      const lengthIndex = headers.indexOf('targetlength');
-      
-      if (filenameIndex === -1 || lengthIndex === -1) {
-        alert('CSV must contain "filename" and "targetLength" columns');
-        return;
-      }
-
-      const csvData: CSVPreviewData[] = [];
-      
-      for (let i = 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        
-        const values = lines[i].split(',').map(v => v.trim());
-        const filename = values[filenameIndex];
-        const targetLength = values[lengthIndex];
-        
-        if (filename && targetLength) {
-          csvData.push({ filename, targetLength });
-        }
-      }
-      
-      setPendingCSVData(csvData);
-      setShowCSVPreview(true);
-    };
-    reader.readAsText(file);
-  };
-
-  const applyCSVData = () => {
-    const updatedData = [...lengthData];
-    
-    for (const csvRow of pendingCSVData) {
-      const rowIndex = updatedData.findIndex(row => row.filename === csvRow.filename);
-      if (rowIndex !== -1 && csvRow.targetLength && !isNaN(parseFloat(csvRow.targetLength))) {
-        const batchFile = batchFiles.find(f => f.fileName === csvRow.filename);
-        if (batchFile) {
-          updatedData[rowIndex] = updateLengthPreview(
-            updatedData[rowIndex], 
-            csvRow.targetLength,
-            batchFile.photometricData
-          );
-        }
-      }
-    }
-    
-    setLengthData(updatedData);
-    setPendingCSVData([]);
   };
 
   const updateLengthPreview = (
@@ -322,13 +256,6 @@ export function BatchLengthEditorPage() {
 
   const actionButtons = [
     {
-      icon: <Upload className="w-4 h-4" />,
-      label: 'Upload CSV',
-      onClick: () => document.getElementById('csv-upload')?.click(),
-      variant: 'secondary' as const,
-      disabled: lengthData.length === 0
-    },
-    {
       icon: <Download className="w-4 h-4" />,
       label: 'Export CSV',
       onClick: exportCSV,
@@ -395,15 +322,6 @@ export function BatchLengthEditorPage() {
           </label>
         </div>
       )}
-
-      {/* Hidden CSV Upload Input */}
-      <input
-        id="csv-upload"
-        type="file"
-        accept=".csv"
-        onChange={handleCSVUpload}
-        className="hidden"
-      />
 
       {/* Action Bar */}
       {lengthData.length > 0 && (
@@ -546,74 +464,6 @@ export function BatchLengthEditorPage() {
         </div>
       )}
 
-      {/* CSV Preview Dialog */}
-      {showCSVPreview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Preview CSV Data</h2>
-              <button
-                onClick={() => {
-                  setShowCSVPreview(false);
-                  setPendingCSVData([]);
-                }}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                ×
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-auto p-6">
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-800">
-                  Preview of {pendingCSVData.length} row{pendingCSVData.length !== 1 ? 's' : ''} from CSV. 
-                  Review the data and click "Apply Changes" to update your files.
-                </p>
-              </div>
-              
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 border border-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Filename</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Length</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {pendingCSVData.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-sm text-gray-900">{row.filename}</td>
-                        <td className="px-4 py-2 text-sm text-gray-900">{row.targetLength}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setShowCSVPreview(false);
-                  setPendingCSVData([]);
-                }}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  applyCSVData();
-                  setShowCSVPreview(false);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Apply Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
