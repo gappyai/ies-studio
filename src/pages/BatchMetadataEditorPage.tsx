@@ -540,8 +540,6 @@ export function BatchMetadataEditorPage() {
                 {csvData.map((row, rowIndex) => (
                   <tr key={rowIndex}>
                     {csvHeaders.map((header) => {
-                      const isDimensionField = header === 'length' || header === 'width' || header === 'height';
-                      
                       return (
                         <td key={header} className="px-4 py-2">
                           {editingCell?.row === rowIndex && editingCell?.field === header ? (
