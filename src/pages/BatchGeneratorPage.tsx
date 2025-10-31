@@ -15,6 +15,8 @@ interface CCTVariant {
   cct: number;
   multiplier: number;
   previewLumens: number;
+  lampCatalogNumber: string;
+  luminaireCatalogNumber: string;
 }
 
 export function BatchGeneratorPage() {
@@ -22,7 +24,7 @@ export function BatchGeneratorPage() {
   const [variants, setVariants] = useState<CCTVariant[]>([]);
   const [generating, setGenerating] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [editingCell, setEditingCell] = useState<{id: string, field: 'filename' | 'cct' | 'multiplier'} | null>(null);
+  const [editingCell, setEditingCell] = useState<{id: string, field: 'filename' | 'cct' | 'multiplier' | 'catalogNumber'} | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -83,14 +85,16 @@ export function BatchGeneratorPage() {
         filename: `${baseName}_${variant.cct}.ies`,
         cct: variant.cct,
         multiplier: variant.multiplier,
-        previewLumens
+        previewLumens,
+        lampCatalogNumber: '',
+        luminaireCatalogNumber: ''
       };
     });
     
     setVariants([...variants, ...variantsToAdd]);
   };
 
-  const updateVariant = (id: string, field: 'filename' | 'cct' | 'multiplier', value: string) => {
+  const updateVariant = (id: string, field: 'filename' | 'cct' | 'multiplier' | 'catalogNumber', value: string) => {
     if (!currentFile) return;
     
     setVariants(variants.map(variant => {
@@ -110,6 +114,14 @@ export function BatchGeneratorPage() {
         if (!isNaN(multiplierValue) && multiplierValue > 0) {
           updated.multiplier = multiplierValue;
           updated.previewLumens = currentFile.photometricData.totalLumens * multiplierValue;
+        }
+      } else if (field === 'catalogNumber') {
+        // Set both lamp and luminaire catalog numbers to the same value
+        updated.lampCatalogNumber = value;
+        updated.luminaireCatalogNumber = value;
+        // Auto-update filename if catalog number is provided
+        if (value.trim() !== '') {
+          updated.filename = value.endsWith('.ies') ? value : `${value}.ies`;
         }
       }
       
@@ -149,7 +161,9 @@ export function BatchGeneratorPage() {
           photometricData: variantPhotometricData,
           metadata: {
             ...workingFile.metadata,
-            colorTemperature: variant.cct
+            colorTemperature: variant.cct,
+            lampCatalogNumber: variant.lampCatalogNumber || workingFile.metadata.lampCatalogNumber,
+            luminaireCatalogNumber: variant.luminaireCatalogNumber || workingFile.metadata.luminaireCatalogNumber
           }
         };
         
@@ -301,6 +315,9 @@ export function BatchGeneratorPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Catalog Number
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Output Filename
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -323,6 +340,30 @@ export function BatchGeneratorPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {variants.map((variant) => (
                   <tr key={variant.id}>
+                    <td className="px-4 py-2">
+                      {editingCell?.id === variant.id && editingCell?.field === 'catalogNumber' ? (
+                        <input
+                          type="text"
+                          value={variant.luminaireCatalogNumber}
+                          onChange={(e) => updateVariant(variant.id, 'catalogNumber', e.target.value)}
+                          onBlur={() => setEditingCell(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              setEditingCell(null);
+                            }
+                          }}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm font-mono"
+                          autoFocus
+                        />
+                      ) : (
+                        <div
+                          onClick={() => setEditingCell({id: variant.id, field: 'catalogNumber'})}
+                          className="px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm font-mono"
+                        >
+                          {variant.luminaireCatalogNumber || '-'}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-2">
                       {editingCell?.id === variant.id && editingCell?.field === 'filename' ? (
                         <input
