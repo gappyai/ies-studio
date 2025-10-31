@@ -73,9 +73,6 @@ export function IntegratedPhotometricEditor({
   // So we display them as-is, no conversion needed for display
   const getDisplayValue = (value: number) => value.toFixed(3);
   
-  // When user edits, value is in current units (as specified by unitsType)
-  const parseInputValue = (value: string) => parseFloat(value);
-  
   // Toggle unit handler
   const handleUnitToggle = () => {
     const newUnitsType = useImperial ? 2 : 1; // Toggle: 1=feet to 2=meters, or vice versa
