@@ -213,7 +213,7 @@ export function BatchWattageEditorPage() {
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Batch Wattage & Lumens Editor</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Batch Wattage/Lumen Editor</h1>
         <p className="text-gray-600 mt-1">
           Update wattage or lumens for multiple IES files with automatic photometric scaling
         </p>
