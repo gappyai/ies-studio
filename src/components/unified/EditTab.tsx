@@ -228,6 +228,7 @@ export function EditTab({
       <div className="space-y-6">
         <IntegratedPhotometricEditor
           currentPhotometricData={{ ...currentFile.photometricData, ...localPhotometricData }}
+          originalColorTemperature={currentFile.metadata.colorTemperature}
           onPhotometricUpdate={onPhotometricChange}
           onBulkUpdate={onBulkPhotometricUpdate}
           onCCTUpdate={(cct) => onMetadataChange('colorTemperature', cct)}

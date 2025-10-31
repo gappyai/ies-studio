@@ -194,7 +194,11 @@ export function UnifiedPage() {
       {/* Tab Content */}
       {activeTab === 'overview' && (
         <OverviewTab
-          currentFile={currentFile}
+          currentFile={{
+            ...currentFile,
+            metadata: { ...currentFile.metadata, ...editedData },
+            photometricData: { ...currentFile.photometricData, ...editedPhotometricData }
+          }}
           calculatedProperties={calculatedProperties}
         />
       )}
@@ -213,11 +217,11 @@ export function UnifiedPage() {
       )}
 
       {activeTab === 'charts' && (
-        <ChartsTab photometricData={currentFile.photometricData} />
+        <ChartsTab photometricData={{ ...currentFile.photometricData, ...editedPhotometricData }} />
       )}
 
       {activeTab === '3d' && (
-        <View3DTab photometricData={currentFile.photometricData} />
+        <View3DTab photometricData={{ ...currentFile.photometricData, ...editedPhotometricData }} />
       )}
 
       {/* Toast Notification */}

@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeftRight } from 'lucide-react';
 import { photometricCalculator } from '../../services/calculator';
 import type { PhotometricData } from '../../types/ies.types';
 
 interface IntegratedPhotometricEditorProps {
   currentPhotometricData: PhotometricData;
+  originalColorTemperature?: number;
   onPhotometricUpdate: (key: keyof PhotometricData, value: any) => void;
   onBulkUpdate: (updates: Partial<PhotometricData>) => void;
   onCCTUpdate: (cct: number) => void;
@@ -13,6 +14,7 @@ interface IntegratedPhotometricEditorProps {
 
 export function IntegratedPhotometricEditor({
   currentPhotometricData,
+  originalColorTemperature,
   onPhotometricUpdate,
   onBulkUpdate,
   onCCTUpdate,
@@ -22,9 +24,32 @@ export function IntegratedPhotometricEditor({
   const [cctMultiplier, setCctMultiplier] = useState('1.0');
   const [wattageValue, setWattageValue] = useState(currentPhotometricData.inputWatts.toFixed(1));
   const [lumensValue, setLumensValue] = useState(currentPhotometricData.totalLumens.toFixed(0));
-  const [autoAdjustWattage, setAutoAdjustWattage] = useState(false);
+  const [autoAdjustWattage, setAutoAdjustWattage] = useState(true);
   const [lengthValue, setLengthValue] = useState('');
-  const [useImperial, setUseImperial] = useState(false); // Toggle between meters and feet
+  
+  // Local editing state for dimensions to allow intermediate typing
+  const [widthInput, setWidthInput] = useState('');
+  const [lengthInput, setLengthInput] = useState('');
+  const [heightInput, setHeightInput] = useState('');
+  const [isEditingWidth, setIsEditingWidth] = useState(false);
+  const [isEditingLength, setIsEditingLength] = useState(false);
+  const [isEditingHeight, setIsEditingHeight] = useState(false);
+
+  // Sync form values with currentPhotometricData changes
+  useEffect(() => {
+    setWattageValue(currentPhotometricData.inputWatts.toFixed(1));
+    setLumensValue(currentPhotometricData.totalLumens.toFixed(0));
+  }, [currentPhotometricData.inputWatts, currentPhotometricData.totalLumens]);
+
+  // Initialize CCT value from original color temperature
+  useEffect(() => {
+    if (originalColorTemperature && !cctValue) {
+      setCctValue(originalColorTemperature.toString());
+    }
+  }, [originalColorTemperature]);
+
+  // Initialize unit toggle from IES file's unitsType (1=feet, 2=meters)
+  const useImperial = currentPhotometricData.unitsType === 1;
 
   // Determine longest dimension and which field it is
   const longestDimension = Math.max(
@@ -44,11 +69,31 @@ export function IntegratedPhotometricEditor({
   const metersToFeet = (meters: number) => meters * 3.28084;
   const feetToMeters = (feet: number) => feet / 3.28084;
   
-  // Display values based on unit toggle
-  const getDisplayValue = (meters: number) => useImperial ? metersToFeet(meters).toFixed(4) : meters.toFixed(4);
-  const parseInputValue = (value: string) => {
-    const num = parseFloat(value);
-    return useImperial ? feetToMeters(num) : num;
+  // The dimensions are stored in the IES file in the unit specified by unitsType
+  // So we display them as-is, no conversion needed for display
+  const getDisplayValue = (value: number) => value.toFixed(3);
+  
+  // When user edits, value is in current units (as specified by unitsType)
+  const parseInputValue = (value: string) => parseFloat(value);
+  
+  // Toggle unit handler
+  const handleUnitToggle = () => {
+    const newUnitsType = useImperial ? 2 : 1; // Toggle: 1=feet to 2=meters, or vice versa
+    const needsConversion = useImperial ? feetToMeters : metersToFeet;
+    
+    // Convert all dimension values
+    const updates: Partial<PhotometricData> = {
+      unitsType: newUnitsType,
+      width: needsConversion(currentPhotometricData.width),
+      length: needsConversion(currentPhotometricData.length),
+      height: needsConversion(currentPhotometricData.height)
+    };
+    
+    onBulkUpdate(updates);
+    onToast?.(
+      `Units changed to ${newUnitsType === 1 ? 'feet' : 'meters'}. Dimensions converted accordingly.`,
+      'info'
+    );
   };
 
   const handleCCTApply = () => {
@@ -114,8 +159,8 @@ export function IntegratedPhotometricEditor({
       return;
     }
     
-    // Convert input to meters
-    const newLengthMeters = useImperial ? feetToMeters(inputValue) : inputValue;
+    // inputValue is already in the current units (as specified by unitsType)
+    const newLength = inputValue;
     
     if (!isLinear) {
       onToast?.('Warning: This fixture may not be linear. Length scaling is most accurate for linear fixtures.', 'info');
@@ -124,7 +169,7 @@ export function IntegratedPhotometricEditor({
     // Scale based on longest dimension using the new scaleByDimension function
     const result = photometricCalculator.scaleByDimension(
       currentPhotometricData,
-      newLengthMeters, // Already in meters
+      newLength,
       longestDimensionName
     );
     onBulkUpdate(result.scaledPhotometricData);
@@ -133,8 +178,7 @@ export function IntegratedPhotometricEditor({
     setWattageValue(result.scaledPhotometricData.inputWatts.toFixed(1));
     
     const displayUnit = useImperial ? 'ft' : 'm';
-    const displayValue = useImperial ? inputValue : newLengthMeters;
-    onToast?.(`${longestDimensionName} scaled to ${displayValue.toFixed(3)} ${displayUnit} (${result.scalingFactor.toFixed(2)}×) • ${result.scaledPhotometricData.inputWatts.toFixed(1)}W • ${result.scaledPhotometricData.totalLumens.toFixed(1)} lm`, 'success');
+    onToast?.(`${longestDimensionName} scaled to ${inputValue.toFixed(3)} ${displayUnit} (${result.scalingFactor.toFixed(2)}×) • ${result.scaledPhotometricData.inputWatts.toFixed(1)}W • ${result.scaledPhotometricData.totalLumens.toFixed(1)} lm`, 'success');
   };
 
   const handleDimensionSwap = () => {
@@ -156,10 +200,11 @@ export function IntegratedPhotometricEditor({
           <div className="flex items-center gap-2 text-sm">
             <span className={!useImperial ? 'font-semibold text-blue-600' : 'text-gray-600'}>Meters</span>
             <button
-              onClick={() => setUseImperial(!useImperial)}
+              onClick={handleUnitToggle}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                 useImperial ? 'bg-blue-600' : 'bg-gray-300'
               }`}
+              title={`Switch to ${useImperial ? 'meters' : 'feet'}`}
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -178,11 +223,33 @@ export function IntegratedPhotometricEditor({
                 Width ({useImperial ? 'ft' : 'm'})
               </label>
               <input
-                type="number"
-                value={getDisplayValue(currentPhotometricData.width)}
-                onChange={(e) => onPhotometricUpdate('width', parseInputValue(e.target.value))}
+                type="text"
+                value={isEditingWidth ? widthInput : getDisplayValue(currentPhotometricData.width)}
+                onFocus={() => {
+                  setIsEditingWidth(true);
+                  setWidthInput(getDisplayValue(currentPhotometricData.width));
+                }}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow typing digits, decimal point, and negative sign
+                  if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                    setWidthInput(value);
+                  }
+                }}
+                onBlur={() => {
+                  setIsEditingWidth(false);
+                  const numValue = parseFloat(widthInput);
+                  if (!isNaN(numValue) && numValue >= 0) {
+                    onPhotometricUpdate('width', numValue);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                step={useImperial ? '0.01' : '0.001'}
+                placeholder="0.000"
               />
             </div>
             <div>
@@ -190,11 +257,33 @@ export function IntegratedPhotometricEditor({
                 Length ({useImperial ? 'ft' : 'm'})
               </label>
               <input
-                type="number"
-                value={getDisplayValue(currentPhotometricData.length)}
-                onChange={(e) => onPhotometricUpdate('length', parseInputValue(e.target.value))}
+                type="text"
+                value={isEditingLength ? lengthInput : getDisplayValue(currentPhotometricData.length)}
+                onFocus={() => {
+                  setIsEditingLength(true);
+                  setLengthInput(getDisplayValue(currentPhotometricData.length));
+                }}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow typing digits, decimal point, and negative sign
+                  if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                    setLengthInput(value);
+                  }
+                }}
+                onBlur={() => {
+                  setIsEditingLength(false);
+                  const numValue = parseFloat(lengthInput);
+                  if (!isNaN(numValue) && numValue >= 0) {
+                    onPhotometricUpdate('length', numValue);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                step={useImperial ? '0.01' : '0.001'}
+                placeholder="0.000"
               />
             </div>
             <div>
@@ -202,11 +291,33 @@ export function IntegratedPhotometricEditor({
                 Height ({useImperial ? 'ft' : 'm'})
               </label>
               <input
-                type="number"
-                value={getDisplayValue(currentPhotometricData.height)}
-                onChange={(e) => onPhotometricUpdate('height', parseInputValue(e.target.value))}
+                type="text"
+                value={isEditingHeight ? heightInput : getDisplayValue(currentPhotometricData.height)}
+                onFocus={() => {
+                  setIsEditingHeight(true);
+                  setHeightInput(getDisplayValue(currentPhotometricData.height));
+                }}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow typing digits, decimal point, and negative sign
+                  if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                    setHeightInput(value);
+                  }
+                }}
+                onBlur={() => {
+                  setIsEditingHeight(false);
+                  const numValue = parseFloat(heightInput);
+                  if (!isNaN(numValue) && numValue >= 0) {
+                    onPhotometricUpdate('height', numValue);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                step={useImperial ? '0.01' : '0.001'}
+                placeholder="0.000"
               />
             </div>
           </div>
@@ -236,12 +347,17 @@ export function IntegratedPhotometricEditor({
             
             <div className="flex gap-2">
               <input
-                type="number"
+                type="text"
                 value={lengthValue}
-                onChange={(e) => setLengthValue(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow typing digits and decimal point
+                  if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                    setLengthValue(value);
+                  }
+                }}
                 placeholder={`Enter length in ${useImperial ? 'feet' : 'meters'}`}
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                step={useImperial ? '0.01' : '0.001'}
               />
               <button
                 onClick={handleLengthScale}
@@ -269,13 +385,20 @@ export function IntegratedPhotometricEditor({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">CCT (Kelvin)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                CCT (Kelvin)
+                {originalColorTemperature && (
+                  <span className="ml-2 text-xs text-gray-500">
+                    (Original: {originalColorTemperature}K)
+                  </span>
+                )}
+              </label>
               <input
                 type="number"
                 value={cctValue}
                 onChange={(e) => setCctValue(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                placeholder="e.g., 4000"
+                placeholder={originalColorTemperature ? `${originalColorTemperature}` : "e.g., 4000"}
               />
             </div>
             <div>

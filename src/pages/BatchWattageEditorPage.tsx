@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Upload, Download, FileText, Trash2 } from 'lucide-react';
+import { Upload, Download } from 'lucide-react';
 import { useIESFileStore, type BatchFile } from '../store/iesFileStore';
 import { iesParser } from '../services/iesParser';
 import { iesGenerator } from '../services/iesGenerator';
 import { photometricCalculator } from '../services/calculator';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { BatchActionBar } from '../components/common/BatchActionBar';
 
 interface WattageRow {
   filename: string;
@@ -22,7 +23,7 @@ export function BatchWattageEditorPage() {
   const { batchFiles, addBatchFiles, clearBatchFiles } = useIESFileStore();
   const [wattageData, setWattageData] = useState<WattageRow[]>([]);
   const [editingCell, setEditingCell] = useState<{ row: number; field: 'wattage' | 'lumens' } | null>(null);
-  const [autoAdjustWattage, setAutoAdjustWattage] = useState(false);
+  const [autoAdjustWattage, setAutoAdjustWattage] = useState(true);
   const [processing, setProcessing] = useState(false);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,57 +75,12 @@ export function BatchWattageEditorPage() {
     }
   };
 
-  const handleCSVUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const csvContent = e.target?.result as string;
-      const lines = csvContent.split('\n');
-      const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
-      
-      const filenameIndex = headers.indexOf('filename');
-      const wattageIndex = headers.indexOf('wattage');
-      const lumensIndex = headers.indexOf('lumens');
-      
-      if (filenameIndex === -1) {
-        alert('CSV must contain "filename" column');
-        return;
-      }
-
-      const updatedData = [...wattageData];
-      
-      for (let i = 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        
-        const values = lines[i].split(',').map(v => v.trim());
-        const filename = values[filenameIndex];
-        const wattage = wattageIndex !== -1 ? values[wattageIndex] : null;
-        const lumens = lumensIndex !== -1 ? values[lumensIndex] : null;
-        
-        const rowIndex = updatedData.findIndex(row => row.filename === filename);
-        if (rowIndex !== -1) {
-          if (lumens && !isNaN(parseFloat(lumens))) {
-            updatedData[rowIndex] = updateLumensPreview(updatedData[rowIndex], lumens);
-          } else if (wattage && !isNaN(parseFloat(wattage))) {
-            updatedData[rowIndex] = updateWattagePreview(updatedData[rowIndex], wattage);
-          }
-        }
-      }
-      
-      setWattageData(updatedData);
-    };
-    reader.readAsText(file);
-  };
-
   const updateWattagePreview = (row: WattageRow, newWattage: string): WattageRow => {
     const wattage = parseFloat(newWattage);
     if (isNaN(wattage) || wattage <= 0) {
       return { ...row, newWattage, previewWattage: row.originalWattage };
     }
 
-    // Calculate new lumens maintaining same efficacy
     const originalEfficacy = row.originalLumens / row.originalWattage;
     const previewLumens = wattage * originalEfficacy;
 
@@ -144,7 +100,6 @@ export function BatchWattageEditorPage() {
       return { ...row, newLumens, previewLumens: row.originalLumens };
     }
 
-    // Calculate new wattage if auto-adjust is enabled, otherwise keep original
     const previewWattage = autoAdjustWattage
       ? (lumens / row.originalLumens) * row.originalWattage
       : row.originalWattage;
@@ -174,7 +129,6 @@ export function BatchWattageEditorPage() {
   };
 
   const exportCSV = () => {
-    // Export both wattage and lumens columns
     const headers = ['filename', 'wattage', 'lumens'];
     const rows = wattageData.map(row => [
       row.filename,
@@ -200,16 +154,13 @@ export function BatchWattageEditorPage() {
 
         let updatedFile = { ...file };
         
-        // Check if lumens changed
         const newLumens = parseFloat(wattageRow.newLumens);
         const lumensChanged = !isNaN(newLumens) && Math.abs(newLumens - file.photometricData.totalLumens) > 0.1;
         
-        // Check if wattage changed
         const newWattage = parseFloat(wattageRow.newWattage);
         const wattageChanged = !isNaN(newWattage) && Math.abs(newWattage - file.photometricData.inputWatts) > 0.01;
 
         if (lumensChanged) {
-          // Apply lumens scaling
           const result = photometricCalculator.scaleByLumens(
             updatedFile.photometricData,
             newLumens,
@@ -217,7 +168,6 @@ export function BatchWattageEditorPage() {
           );
           updatedFile.photometricData = result.scaledPhotometricData;
         } else if (wattageChanged) {
-          // Apply wattage scaling (legacy behavior)
           const result = photometricCalculator.scaleByWattage(
             updatedFile.photometricData,
             newWattage
@@ -243,33 +193,41 @@ export function BatchWattageEditorPage() {
     setWattageData([]);
   };
 
+  const actionButtons = [
+    {
+      icon: <Download className="w-4 h-4" />,
+      label: 'Export CSV',
+      onClick: exportCSV,
+      variant: 'secondary' as const,
+      disabled: wattageData.length === 0
+    },
+    {
+      icon: <Download className="w-4 h-4" />,
+      label: 'Download Files',
+      onClick: downloadProcessedFiles,
+      variant: 'primary' as const,
+      disabled: processing || batchFiles.length === 0
+    }
+  ];
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Batch Wattage & Lumens Editor</h1>
-          <p className="text-gray-600 mt-1">
-            Update wattage or lumens for multiple IES files with automatic photometric scaling
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">Batch Wattage & Lumens Editor</h1>
+        <p className="text-gray-600 mt-1">
+          Update wattage or lumens for multiple IES files with automatic photometric scaling
+        </p>
+        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm text-blue-800">
+            <strong>How it works:</strong> Edit either wattage or lumens. When lumens changes, candela values are
+            scaled proportionally. Enable auto-adjust to also scale wattage and maintain efficacy (lm/W).
           </p>
-          <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-800">
-              <strong>How it works:</strong> Edit either wattage or lumens. When lumens changes, candela values are
-              scaled proportionally. Enable auto-adjust to also scale wattage and maintain efficacy (lm/W).
-            </p>
-          </div>
         </div>
-        <button
-          onClick={clearAll}
-          className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
-        >
-          <Trash2 className="w-4 h-4" />
-          Clear All
-        </button>
       </div>
 
-      {/* Upload Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow-sm">
+      {/* Compact File Upload Section */}
+      {wattageData.length === 0 && (
+        <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Upload IES Files</h2>
           <label className="block">
             <input
@@ -293,42 +251,29 @@ export function BatchWattageEditorPage() {
             </div>
           </label>
         </div>
+      )}
 
-        <div className="bg-white p-6 rounded-lg shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Upload CSV with Wattages</h2>
-          <label className="block">
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleCSVUpload}
-              className="hidden"
-            />
-            <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-gray-400 cursor-pointer">
-              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-600" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Upload CSV with new values
-              </h3>
-              <p className="text-sm text-gray-600">
-                CSV with columns: filename, wattage, lumens
-              </p>
-            </div>
-          </label>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
+      {/* Action Bar */}
       {wattageData.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
-          <div className="flex flex-wrap gap-4 items-center">
+        <BatchActionBar
+          actions={actionButtons}
+          onClear={clearAll}
+          fileCount={batchFiles.length}
+        />
+      )}
+
+      {/* Wattage Editor Table - Main Content */}
+      {wattageData.length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow-sm ">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Wattage & Lumens Editor</h2>
             <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
               <input
                 type="checkbox"
-                id="batchAutoAdjustWattage"
+                id="autoAdjustWattage"
                 checked={autoAdjustWattage}
                 onChange={(e) => {
                   setAutoAdjustWattage(e.target.checked);
-                  // Recalculate all previews with new setting
                   const updatedData = wattageData.map(row =>
                     updateLumensPreview(row, row.newLumens)
                   );
@@ -336,65 +281,12 @@ export function BatchWattageEditorPage() {
                 }}
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
-              <label htmlFor="batchAutoAdjustWattage" className="text-sm text-gray-700 cursor-pointer font-medium">
+              <label htmlFor="autoAdjustWattage" className="text-sm text-gray-700 cursor-pointer font-medium">
                 Auto-adjust wattage when editing lumens
               </label>
             </div>
-            
-            <button
-              onClick={exportCSV}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              <Download className="w-4 h-4" />
-              Export CSV Template
-            </button>
-            <button
-              onClick={downloadProcessedFiles}
-              disabled={processing || batchFiles.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Download className="w-4 h-4" />
-              {processing ? 'Processing...' : 'Download Processed Files'}
-            </button>
           </div>
-        </div>
-      )}
-
-      {/* File List */}
-      {batchFiles.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Uploaded Files ({batchFiles.length})
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {batchFiles.map((file) => {
-              const wattageRow = wattageData.find(row => row.filename === file.fileName);
-              return (
-                <div key={file.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <FileText className="w-5 h-5 text-gray-600" />
-                    <span className="font-medium text-sm text-gray-900 truncate">{file.fileName}</span>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    <p>Original: {file.photometricData.inputWatts.toFixed(1)}W, {file.photometricData.totalLumens.toFixed(0)} lm</p>
-                    {wattageRow && (parseFloat(wattageRow.newWattage) !== wattageRow.originalWattage ||
-                                    parseFloat(wattageRow.newLumens) !== wattageRow.originalLumens) && (
-                      <p className="text-blue-600 font-medium mt-1">
-                        New: {wattageRow.previewWattage.toFixed(1)}W, {wattageRow.previewLumens.toFixed(0)} lm
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Wattage Editor Table */}
-      {wattageData.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Wattage & Lumens Editor</h2>
+          
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -494,6 +386,7 @@ export function BatchWattageEditorPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

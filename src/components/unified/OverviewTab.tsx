@@ -179,15 +179,21 @@ export function OverviewTab({ currentFile, calculatedProperties }: OverviewTabPr
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <div>
             <p className="text-sm text-gray-500">Width</p>
-            <p className="font-medium text-gray-900">{currentFile.photometricData.width} m</p>
+            <p className="font-medium text-gray-900">
+              {currentFile.photometricData.width.toFixed(3)} {currentFile.photometricData.unitsType === 1 ? 'ft' : 'm'}
+            </p>
           </div>
           <div>
             <p className="text-sm text-gray-500">Length</p>
-            <p className="font-medium text-gray-900">{currentFile.photometricData.length} m</p>
+            <p className="font-medium text-gray-900">
+              {currentFile.photometricData.length.toFixed(3)} {currentFile.photometricData.unitsType === 1 ? 'ft' : 'm'}
+            </p>
           </div>
           <div>
             <p className="text-sm text-gray-500">Height</p>
-            <p className="font-medium text-gray-900">{currentFile.photometricData.height} m</p>
+            <p className="font-medium text-gray-900">
+              {currentFile.photometricData.height.toFixed(3)} {currentFile.photometricData.unitsType === 1 ? 'ft' : 'm'}
+            </p>
           </div>
         </div>
       </div>
