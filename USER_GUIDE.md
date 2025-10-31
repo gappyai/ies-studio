@@ -57,7 +57,7 @@ Edit metadata fields across multiple IES files without modifying photometric cal
 
 ---
 
-## Batch Wattage & Lumens Editor
+## Batch Wattage/Lumen Editor
 
 ### Purpose
 Scale wattage and lumens across multiple files with automatic photometric recalculation.
@@ -205,6 +205,6 @@ Present on all batch pages with:
 | View single file | Single File Editor | Overview + Charts |
 | Edit one file | Single File Editor | Edit tab + Download |
 | Change metadata only | Batch Metadata Editor | No photometric changes |
-| Scale light output | Batch Wattage Editor | Proportional scaling |
+| Scale light output | Batch Wattage/Lumen | Proportional scaling |
 | Scale linear fixture | Batch Length Editor | 1D linear scaling |
 | Create CCT family | CCT Batch Generator | Multiple variants from one file |
