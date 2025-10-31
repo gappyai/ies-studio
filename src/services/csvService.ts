@@ -17,6 +17,7 @@ export interface CSVRow {
   length?: string;
   width?: string;
   height?: string;
+  unit?: string; // 'meters' or 'feet'
 }
 
 export class CSVService {
@@ -66,10 +67,17 @@ export class CSVService {
       'multiplier': 'cctMultiplier',
       'length': 'length',
       'length (m)': 'length',
+      'length (ft)': 'length',
       'width': 'width',
       'width (m)': 'width',
+      'width (ft)': 'width',
       'height': 'height',
-      'height (m)': 'height'
+      'height (m)': 'height',
+      'height (ft)': 'height',
+      'unit': 'unit',
+      'units': 'unit',
+      'dimension unit': 'unit',
+      'dimension units': 'unit'
     };
 
     for (let i = 1; i < lines.length; i++) {
@@ -127,14 +135,12 @@ export class CSVService {
    */
   exportCSV(rows: CSVRow[], includePhotometric: boolean = false): string {
     const headers = includePhotometric
-      ? ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField', 'cct', 'length', 'width', 'height']
+      ? ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField', 'cct', 'length', 'width', 'height', 'unit']
       : ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField'];
     
-    // Create display headers with units
+    // Create display headers
     const displayHeaders = headers.map(header => {
-      if (header === 'length' || header === 'width' || header === 'height') {
-        return `${header} (m)`;
-      } else if (header === 'cct') {
+      if (header === 'cct') {
         return 'cct (K)';
       } else if (header === 'nearField') {
         return 'nearField';

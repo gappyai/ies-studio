@@ -132,12 +132,27 @@ export function BatchMetadataEditorPage() {
   };
 
   const applyCSVData = () => {
-    // Merge with existing unit information
+    // Parse unit from CSV or use existing or default to meters
     const updatedData = pendingCSVData.map(newRow => {
       const existingRow = csvData.find(r => r.filename === newRow.filename);
+      
+      // Determine unit from CSV data or existing data
+      let unit: 'meters' | 'feet' = 'meters';
+      if (newRow.unit) {
+        // Normalize unit value from CSV
+        const unitValue = newRow.unit.toLowerCase().trim();
+        if (unitValue === 'feet' || unitValue === 'ft' || unitValue === 'foot') {
+          unit = 'feet';
+        } else if (unitValue === 'meters' || unitValue === 'm' || unitValue === 'meter') {
+          unit = 'meters';
+        }
+      } else if (existingRow?.unit) {
+        unit = existingRow.unit;
+      }
+      
       return {
         ...newRow,
-        unit: existingRow?.unit || 'meters'
+        unit
       } as ExtendedCSVRow;
     });
     

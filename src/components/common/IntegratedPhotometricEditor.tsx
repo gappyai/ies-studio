@@ -33,6 +33,12 @@ export function IntegratedPhotometricEditor({
   const [isEditingLength, setIsEditingLength] = useState(false);
   const [isEditingHeight, setIsEditingHeight] = useState(false);
 
+  // Sync form values with currentPhotometricData changes
+  useEffect(() => {
+    setWattageValue(currentPhotometricData.inputWatts.toFixed(1));
+    setLumensValue(currentPhotometricData.totalLumens.toFixed(0));
+  }, [currentPhotometricData.inputWatts, currentPhotometricData.totalLumens]);
+
   // Initialize unit toggle from IES file's unitsType (1=feet, 2=meters)
   const useImperial = currentPhotometricData.unitsType === 1;
 

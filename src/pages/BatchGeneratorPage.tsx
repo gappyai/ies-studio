@@ -273,11 +273,23 @@ export function BatchGeneratorPage() {
         <p className="text-gray-600 mt-1">
           Generate multiple IES file variants with different CCT values and lumen multipliers
         </p>
-        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
           <p className="text-sm text-blue-800">
             <strong>Base File:</strong> {currentFile.fileName} ({currentFile.photometricData.totalLumens.toFixed(0)} lumens)
             {Object.keys(editedData).length > 0 && <span className="ml-2">✓ Includes your edits</span>}
           </p>
+          <label className="cursor-pointer">
+            <input
+              type="file"
+              accept=".ies,.IES"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors">
+              <Upload className="w-3 h-3" />
+              Change File
+            </span>
+          </label>
         </div>
       </div>
 
