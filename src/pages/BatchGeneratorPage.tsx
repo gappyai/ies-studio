@@ -44,25 +44,8 @@ export function BatchGeneratorPage() {
       setCurrentFile(parsedFile);
       setCalculatedProperties(calculated);
       
-      // Auto-generate default variants
-      const baseName = file.name.replace(/\.(ies|IES)$/i, '');
-      const defaultCCTs = [2700, 3000, 4000, 5000, 6500];
-      const defaultMultipliers = [0.88, 0.92, 1.0, 1.05, 1.12];
-      
-      const defaultVariants: CCTVariant[] = defaultCCTs.map((cct, index) => {
-        const multiplier = defaultMultipliers[index];
-        const previewLumens = parsedFile.photometricData.totalLumens * multiplier;
-        
-        return {
-          id: `${Date.now()}-${index}`,
-          filename: `${baseName}_${cct}.ies`,
-          cct,
-          multiplier,
-          previewLumens
-        };
-      });
-      
-      setVariants(defaultVariants);
+      // Start with empty variants table
+      setVariants([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse IES file');
     } finally {
@@ -87,21 +70,24 @@ export function BatchGeneratorPage() {
     }
   };
 
-  const addVariant = (cct: number, multiplier: number) => {
+  const addVariant = (newVariants: Array<{ cct: number; multiplier: number }>) => {
     if (!currentFile) return;
     
     const baseName = currentFile.fileName.replace(/\.(ies|IES)$/i, '');
-    const previewLumens = currentFile.photometricData.totalLumens * multiplier;
     
-    const newVariant: CCTVariant = {
-      id: `${Date.now()}`,
-      filename: `${baseName}_${cct}.ies`,
-      cct,
-      multiplier,
-      previewLumens
-    };
+    const variantsToAdd: CCTVariant[] = newVariants.map((variant, index) => {
+      const previewLumens = currentFile.photometricData.totalLumens * variant.multiplier;
+      
+      return {
+        id: `${Date.now()}-${index}`,
+        filename: `${baseName}_${variant.cct}.ies`,
+        cct: variant.cct,
+        multiplier: variant.multiplier,
+        previewLumens
+      };
+    });
     
-    setVariants([...variants, newVariant]);
+    setVariants([...variants, ...variantsToAdd]);
   };
 
   const updateVariant = (id: string, field: 'filename' | 'cct' | 'multiplier', value: string) => {
