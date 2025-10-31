@@ -112,6 +112,9 @@ export function BatchMetadataEditorPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Reset input so the same file can be selected again
+    event.target.value = '';
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const csvContent = e.target?.result as string;
