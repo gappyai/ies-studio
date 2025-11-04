@@ -23,7 +23,7 @@ export class IESGenerator {
     if (file.metadata.other) lines.push(`[OTHER] ${file.metadata.other}`);
     if (file.metadata.nearField) {
       // Construct full NEARFIELD line using type and photometric dimensions
-      const nearFieldLine = `[NEARFIELD] ${file.metadata.nearField} ${truncateToThreeDecimals(file.photometricData.width)} ${truncateToThreeDecimals(file.photometricData.length)} ${truncateToThreeDecimals(file.photometricData.height)}`;
+      const nearFieldLine = `[NEARFIELD] ${file.metadata.nearField} ${truncateToThreeDecimals(file.photometricData.length)} ${truncateToThreeDecimals(file.photometricData.width)} ${truncateToThreeDecimals(file.photometricData.height)}`;
       lines.push(nearFieldLine);
     }
     if (file.metadata.manufacturer) lines.push(`[MANUFAC] ${file.metadata.manufacturer}`);
@@ -45,7 +45,7 @@ export class IESGenerator {
     lines.push(
       `${data.numberOfLamps} ${truncateToThreeDecimals(data.lumensPerLamp)} ${data.multiplier} ` +
       `${data.numberOfVerticalAngles} ${data.numberOfHorizontalAngles} ` +
-      `${data.photometricType} ${data.unitsType} ${truncateToThreeDecimals(data.width)} ${truncateToThreeDecimals(data.length)} ${truncateToThreeDecimals(data.height)}`
+      `${data.photometricType} ${data.unitsType} ${truncateToThreeDecimals(data.length)} ${truncateToThreeDecimals(data.width)} ${truncateToThreeDecimals(data.height)}`
     );
     
     // Add ballast and input watts line
