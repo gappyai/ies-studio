@@ -1,10 +1,11 @@
-import { FileText, Settings, Zap, Ruler, Palette } from 'lucide-react';
+import { FileText, Settings, Zap, Ruler, Palette, Lightbulb } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 const navigationItems = [
   { path: '/', icon: FileText, label: 'File Editor', exact: true },
   { path: '/batch-metadata', icon: Settings, label: 'Batch Metadata' },
-  { path: '/batch-wattage', icon: Zap, label: 'Batch Wattage/Lumen' },
+  { path: '/batch-wattage', icon: Zap, label: 'Batch Wattage' },
+  { path: '/batch-lumens', icon: Lightbulb, label: 'Batch Lumens' },
   { path: '/batch-length', icon: Ruler, label: 'Batch Length' },
   { path: '/batch-cct', icon: Palette, label: 'Batch CCT' },
 ];

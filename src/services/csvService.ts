@@ -12,6 +12,7 @@ export interface CSVRow {
   nearField?: string;
   // Photometric update fields
   wattage?: string;
+  lumens?: string;
   cct?: string;
   cctMultiplier?: string;
   length?: string;
@@ -58,6 +59,9 @@ export class CSVService {
       'wattage': 'wattage',
       'watts': 'wattage',
       'power': 'wattage',
+      'lumens': 'lumens',
+      'lumen': 'lumens',
+      'lm': 'lumens',
       'cct': 'cct',
       'cct (k)': 'cct',
       'colortemperature': 'cct',
