@@ -4,9 +4,11 @@ import { useIESFileStore, type BatchFile } from '../store/iesFileStore';
 import { iesParser } from '../services/iesParser';
 import { iesGenerator } from '../services/iesGenerator';
 import { photometricCalculator } from '../services/calculator';
+import { type CSVRow } from '../services/csvService';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { BatchActionBar } from '../components/common/BatchActionBar';
+import { CSVPreviewDialog } from '../components/common/CSVPreviewDialog';
 
 interface LengthRow {
   filename: string;
@@ -28,6 +30,9 @@ export function BatchLengthEditorPage() {
   const [lengthData, setLengthData] = useState<LengthRow[]>([]);
   const [editingCell, setEditingCell] = useState<number | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [showCSVPreview, setShowCSVPreview] = useState(false);
+  const [pendingCSVData, setPendingCSVData] = useState<Array<{filename: string; targetLength: string; scalingDimension?: string}>>([]);
+  const [csvErrors, setCsvErrors] = useState<string[]>([]);
 
   const currentUnitsType = batchFiles.length > 0 ? batchFiles[0].photometricData.unitsType : 2;
   const useImperial = currentUnitsType === 1;
@@ -199,6 +204,165 @@ export function BatchLengthEditorPage() {
     setLengthData(newData);
   };
 
+  const handleCSVUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Reset input so the same file can be selected again
+    event.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const csvContent = e.target?.result as string;
+      const parsedData = parseLengthCSV(csvContent);
+      
+      const validation = validateLengthCSV(parsedData);
+      if (!validation.isValid) {
+        setCsvErrors(validation.errors);
+        alert('CSV validation errors:\n' + validation.errors.join('\n'));
+        return;
+      }
+      
+      setCsvErrors([]);
+      setPendingCSVData(parsedData);
+      setShowCSVPreview(true);
+    };
+    reader.readAsText(file);
+  };
+
+  // Parse CSV specifically for length editor (filename, targetLength, optional scalingDimension)
+  const parseLengthCSV = (content: string): Array<{filename: string; targetLength: string; scalingDimension?: string}> => {
+    const lines = content.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+
+    const headers = smartSplitCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+    const rows: Array<{filename: string; targetLength: string; scalingDimension?: string}> = [];
+
+    // Map headers
+    const filenameIndex = headers.findIndex(h => h === 'filename' || h === 'file name');
+    const targetLengthIndex = headers.findIndex(h => 
+      h === 'targetlength' || h === 'target length' || h === 'target_length' || h === 'length'
+    );
+    const scalingDimensionIndex = headers.findIndex(h => 
+      h === 'scalingdimension' || h === 'scaling dimension' || h === 'scaling_dimension' || 
+      h === 'dimension' || h === 'dimension to scale'
+    );
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = smartSplitCSVLine(lines[i]);
+      const filename = filenameIndex >= 0 && filenameIndex < values.length ? values[filenameIndex].trim() : '';
+      const targetLength = targetLengthIndex >= 0 && targetLengthIndex < values.length ? values[targetLengthIndex].trim() : '';
+      const scalingDimension = scalingDimensionIndex >= 0 && scalingDimensionIndex < values.length ? values[scalingDimensionIndex].trim() : undefined;
+
+      if (filename && targetLength) {
+        rows.push({
+          filename,
+          targetLength,
+          scalingDimension: scalingDimension ? scalingDimension.toLowerCase() : undefined
+        });
+      }
+    }
+
+    return rows;
+  };
+
+  // Simple CSV line splitter supporting quotes and escaped quotes
+  const smartSplitCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const next = line[i + 1];
+      if (char === '"') {
+        if (inQuotes && next === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current);
+    return result;
+  };
+
+  const validateLengthCSV = (rows: Array<{filename: string; targetLength: string; scalingDimension?: string}>): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+
+    if (rows.length === 0) {
+      errors.push('No data rows found');
+      return { isValid: false, errors };
+    }
+
+    rows.forEach((row, index) => {
+      // Check if filename exists in lengthData
+      const existingRow = lengthData.find(r => r.filename === row.filename);
+      if (!existingRow) {
+        errors.push(`Row ${index + 2}: Filename "${row.filename}" not found in uploaded files`);
+      }
+
+      // Validate targetLength
+      if (!row.targetLength || row.targetLength.trim() === '') {
+        errors.push(`Row ${index + 2}: Missing targetLength value`);
+      } else {
+        const targetLength = parseFloat(row.targetLength);
+        if (isNaN(targetLength) || targetLength <= 0) {
+          errors.push(`Row ${index + 2}: Invalid targetLength value "${row.targetLength}"`);
+        }
+      }
+
+      // Validate scalingDimension if provided
+      if (row.scalingDimension && row.scalingDimension !== 'length' && row.scalingDimension !== 'width') {
+        errors.push(`Row ${index + 2}: Invalid scalingDimension "${row.scalingDimension}" (must be "length" or "width")`);
+      }
+    });
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  };
+
+  const applyCSVData = () => {
+    const newLengthData = [...lengthData];
+
+    pendingCSVData.forEach((csvRow) => {
+      const rowIndex = newLengthData.findIndex(r => r.filename === csvRow.filename);
+      if (rowIndex < 0) return;
+
+      const row = newLengthData[rowIndex];
+      const batchFile = batchFiles[rowIndex];
+      if (!batchFile) return;
+
+      // Update scaling dimension if provided
+      let scalingDimension = row.scalingDimension;
+      if (csvRow.scalingDimension) {
+        if (csvRow.scalingDimension === 'length' || csvRow.scalingDimension === 'width') {
+          scalingDimension = csvRow.scalingDimension;
+        }
+      }
+
+      // Update target length
+      const targetLength = csvRow.targetLength.trim();
+
+      // Update the row using updateLengthPreview
+      newLengthData[rowIndex] = updateLengthPreview(
+        { ...row, scalingDimension },
+        targetLength,
+        batchFile.photometricData
+      );
+    });
+
+    setLengthData(newLengthData);
+    setPendingCSVData([]);
+  };
+
   const exportCSV = () => {
     const headers = ['filename', 'targetLength'];
     const rows = lengthData.map(row => [
@@ -255,6 +419,13 @@ export function BatchLengthEditorPage() {
   };
 
   const actionButtons = [
+    {
+      icon: <Upload className="w-4 h-4" />,
+      label: 'Upload CSV',
+      onClick: () => document.getElementById('csv-upload')?.click(),
+      variant: 'secondary' as const,
+      disabled: lengthData.length === 0
+    },
     {
       icon: <Download className="w-4 h-4" />,
       label: 'Export CSV',
@@ -323,6 +494,15 @@ export function BatchLengthEditorPage() {
         </div>
       )}
 
+      {/* Hidden CSV Upload Input */}
+      <input
+        id="csv-upload"
+        type="file"
+        accept=".csv"
+        onChange={handleCSVUpload}
+        className="hidden"
+      />
+
       {/* Action Bar */}
       {lengthData.length > 0 && (
         <BatchActionBar
@@ -355,6 +535,17 @@ export function BatchLengthEditorPage() {
               <span className={useImperial ? 'font-semibold text-blue-600' : 'text-gray-600'}>Feet</span>
             </div>
           </div>
+          
+          {csvErrors.length > 0 && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <h3 className="text-sm font-medium text-red-800 mb-2">CSV Validation Errors:</h3>
+              <ul className="text-sm text-red-700 list-disc list-inside">
+                {csvErrors.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -464,6 +655,22 @@ export function BatchLengthEditorPage() {
         </div>
       )}
 
+      {/* CSV Preview Dialog */}
+      <CSVPreviewDialog
+        isOpen={showCSVPreview}
+        onClose={() => {
+          setShowCSVPreview(false);
+          setPendingCSVData([]);
+        }}
+        onConfirm={applyCSVData}
+        csvData={pendingCSVData.map(row => ({
+          filename: row.filename,
+          length: row.targetLength, // Use 'length' field from CSVRow to display targetLength
+          ...(row.scalingDimension && { other: row.scalingDimension }) // Use 'other' field to display scalingDimension
+        } as CSVRow))}
+        title="Preview Length CSV Data"
+        headers={['filename', 'length', ...(pendingCSVData.some(row => row.scalingDimension) ? ['other'] : [])] as (keyof CSVRow)[]}
+      />
     </div>
   );
 }

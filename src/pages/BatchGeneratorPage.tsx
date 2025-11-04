@@ -4,10 +4,12 @@ import { useIESFileStore } from '../store/iesFileStore';
 import { iesGenerator } from '../services/iesGenerator';
 import { iesParser } from '../services/iesParser';
 import { photometricCalculator } from '../services/calculator';
+import { csvService, type CSVRow } from '../services/csvService';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { BatchActionBar } from '../components/common/BatchActionBar';
 import { AddCCTVariantDialog } from '../components/common/AddCCTVariantDialog';
+import { CSVPreviewDialog } from '../components/common/CSVPreviewDialog';
 
 interface CCTVariant {
   id: string;
@@ -28,6 +30,9 @@ export function BatchGeneratorPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [showCSVPreview, setShowCSVPreview] = useState(false);
+  const [pendingCSVData, setPendingCSVData] = useState<CSVRow[]>([]);
+  const [csvErrors, setCsvErrors] = useState<string[]>([]);
 
   const handleFileUpload = async (file: File) => {
     setError(null);
@@ -180,6 +185,218 @@ export function BatchGeneratorPage() {
     }
   };
 
+  const handleCSVUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Reset input so the same file can be selected again
+    event.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const csvContent = e.target?.result as string;
+      let parsedData = csvService.parseCSV(csvContent);
+      // Fallback: allow rows without filename for CCT variants CSV
+      if (parsedData.length === 0) {
+        parsedData = parseCCTVariantsCSV(csvContent);
+      }
+      
+      // Validate CSV data for CCT variants
+      const validation = validateCCTCSV(parsedData);
+      if (!validation.isValid) {
+        setCsvErrors(validation.errors);
+        alert('CSV validation errors:\n' + validation.errors.join('\n'));
+        return;
+      }
+      
+      setCsvErrors([]);
+      setPendingCSVData(parsedData);
+      setShowCSVPreview(true);
+    };
+    reader.readAsText(file);
+  };
+
+  // Lenient CSV parser for CCT variants: accepts rows without filename
+  const parseCCTVariantsCSV = (content: string): CSVRow[] => {
+    const lines = content.split('\n').filter(line => line.trim());
+    if (lines.length === 0) return [];
+
+    const headers = smartSplitCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+    const mapHeader = (h: string): keyof CSVRow | null => {
+      const key = h.replace(/\s+/g, ' ').trim();
+      if (key === 'cct' || key === 'cct (k)' || key === 'colortemperature' || key === 'color temperature') return 'cct';
+      if (key === 'multiplier' || key === 'cctmultiplier' || key === 'cct multiplier') return 'cctMultiplier';
+      if (key === 'catalog number' || key === 'luminairecatalognumber' || key === 'lumcat') return 'luminaireCatalogNumber';
+      if (key === 'filename' || key === 'file name') return 'filename';
+      return null;
+    };
+
+    const mappedHeaders = headers.map(mapHeader);
+    const rows: CSVRow[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = smartSplitCSVLine(lines[i]);
+      const row: Partial<CSVRow> = {};
+      mappedHeaders.forEach((mh, idx) => {
+        if (!mh) return;
+        if (idx < values.length) {
+          row[mh] = values[idx].trim();
+        }
+      });
+      // Accept row if it has at least CCT or Catalog Number
+      if ((row.cct && row.cct !== '') || (row.luminaireCatalogNumber && row.luminaireCatalogNumber !== '') || (row.filename && row.filename !== '')) {
+        rows.push(row as CSVRow);
+      }
+    }
+
+    return rows;
+  };
+
+  // Simple CSV line splitter supporting quotes and escaped quotes
+  const smartSplitCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const next = line[i + 1];
+      if (char === '"') {
+        if (inQuotes && next === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current);
+    return result;
+  };
+
+  const validateCCTCSV = (rows: CSVRow[]): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+
+    if (rows.length === 0) {
+      errors.push('No data rows found');
+      return { isValid: false, errors };
+    }
+
+    rows.forEach((row, index) => {
+      if (!row.cct || row.cct.trim() === '') {
+        errors.push(`Row ${index + 2}: Missing CCT value`);
+      } else {
+        const cct = parseFloat(row.cct);
+        if (isNaN(cct) || cct <= 0) {
+          errors.push(`Row ${index + 2}: Invalid CCT value "${row.cct}"`);
+        }
+      }
+
+      // Check for multiplier (csvService maps 'multiplier' column to 'cctMultiplier')
+      if (row.cctMultiplier && row.cctMultiplier.trim() !== '') {
+        const multValue = parseFloat(row.cctMultiplier);
+        if (isNaN(multValue) || multValue <= 0) {
+          errors.push(`Row ${index + 2}: Invalid multiplier value "${row.cctMultiplier}"`);
+        }
+      }
+    });
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  };
+
+  const applyCSVData = () => {
+    if (!currentFile) return;
+
+    const baseName = currentFile.fileName.replace(/\.(ies|IES)$/i, '');
+    const updatedVariants = [...variants];
+
+    pendingCSVData.forEach((csvRow) => {
+      const cct = parseFloat(csvRow.cct || '0');
+      if (isNaN(cct) || cct <= 0) return;
+
+      // Check if variant with same CCT already exists
+      const existingIndex = updatedVariants.findIndex(v => v.cct === cct);
+      
+      // Get multiplier from CSV (csvService maps 'multiplier' column to 'cctMultiplier')
+      const multiplierStr = csvRow.cctMultiplier || '1.0';
+      const multiplier = parseFloat(multiplierStr) || 1.0;
+      const previewLumens = currentFile.photometricData.totalLumens * multiplier;
+
+      // Get catalog number (csvService maps 'lumcat' -> 'luminaireCatalogNumber')
+      // We use the same value for both luminaire and lamp catalog numbers
+      const catalogNumber = csvRow.luminaireCatalogNumber || '';
+      const luminaireCatalogNumber = catalogNumber;
+      const lampCatalogNumber = catalogNumber;
+      
+      // Generate filename - prefer CSV filename, then catalog number, then default
+      let filename = csvRow.filename || '';
+      if (!filename && luminaireCatalogNumber) {
+        filename = luminaireCatalogNumber.endsWith('.ies') 
+          ? luminaireCatalogNumber 
+          : `${luminaireCatalogNumber}.ies`;
+      }
+      if (!filename) {
+        filename = `${baseName}_${cct}.ies`;
+      }
+
+      const variantData: CCTVariant = {
+        id: existingIndex >= 0 ? updatedVariants[existingIndex].id : `${Date.now()}-${cct}`,
+        filename,
+        cct,
+        multiplier,
+        previewLumens,
+        lampCatalogNumber,
+        luminaireCatalogNumber
+      };
+
+      if (existingIndex >= 0) {
+        // Update existing variant
+        updatedVariants[existingIndex] = variantData;
+      } else {
+        // Add new variant
+        updatedVariants.push(variantData);
+      }
+    });
+
+    setVariants(updatedVariants);
+    setPendingCSVData([]);
+  };
+
+  const exportCSV = () => {
+    const displayHeaders = ['CCT (K)', 'Catalog Number', 'Filename', 'Multiplier'];
+    
+    let csvContent = displayHeaders.join(',') + '\n';
+    
+    if (variants.length > 0) {
+      const rows = variants.map(variant => [
+        variant.cct.toString(),
+        variant.luminaireCatalogNumber || '',
+        variant.filename,
+        variant.multiplier.toFixed(2)
+      ]);
+      
+      csvContent += rows.map(row => 
+        row.map(val => {
+          // Escape commas and quotes
+          if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+            return `"${val.replace(/"/g, '""')}"`;
+          }
+          return val;
+        }).join(',')
+      ).join('\n');
+    }
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    saveAs(blob, 'cct_variants.csv');
+  };
+
   const clearAll = () => {
     setVariants([]);
     setError(null);
@@ -258,6 +475,20 @@ export function BatchGeneratorPage() {
       disabled: false
     },
     {
+      icon: <Upload className="w-4 h-4" />,
+      label: 'Upload CSV',
+      onClick: () => document.getElementById('csv-upload')?.click(),
+      variant: 'secondary' as const,
+      disabled: !currentFile
+    },
+    {
+      icon: <Download className="w-4 h-4" />,
+      label: 'Export CSV',
+      onClick: exportCSV,
+      variant: 'secondary' as const,
+      disabled: false
+    },
+    {
       icon: <Download className="w-4 h-4" />,
       label: 'Download Files',
       onClick: downloadVariants,
@@ -265,6 +496,8 @@ export function BatchGeneratorPage() {
       disabled: generating || variants.length === 0
     }
   ];
+
+  const csvHeaders: (keyof CSVRow)[] = ['cct', 'luminaireCatalogNumber', 'filename', 'cctMultiplier'];
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -293,8 +526,17 @@ export function BatchGeneratorPage() {
         </div>
       </div>
 
+      {/* Hidden CSV Upload Input */}
+      <input
+        id="csv-upload"
+        type="file"
+        accept=".csv"
+        onChange={handleCSVUpload}
+        className="hidden"
+      />
+
       {/* Action Bar */}
-      {variants.length > 0 && (
+      {currentFile && (
         <BatchActionBar
           actions={actionButtons}
           onClear={clearAll}
@@ -310,18 +552,29 @@ export function BatchGeneratorPage() {
             <p className="text-xs text-gray-500">Click cells to edit</p>
           </div>
           
+          {csvErrors.length > 0 && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <h3 className="text-sm font-medium text-red-800 mb-2">CSV Validation Errors:</h3>
+              <ul className="text-sm text-red-700 list-disc list-inside">
+                {csvErrors.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    CCT (K)
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Catalog Number
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Output Filename
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    CCT (K)
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Multiplier
@@ -340,6 +593,30 @@ export function BatchGeneratorPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {variants.map((variant) => (
                   <tr key={variant.id}>
+                    <td className="px-4 py-2">
+                      {editingCell?.id === variant.id && editingCell?.field === 'cct' ? (
+                        <input
+                          type="number"
+                          value={variant.cct}
+                          onChange={(e) => updateVariant(variant.id, 'cct', e.target.value)}
+                          onBlur={() => setEditingCell(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              setEditingCell(null);
+                            }
+                          }}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          autoFocus
+                        />
+                      ) : (
+                        <div
+                          onClick={() => setEditingCell({id: variant.id, field: 'cct'})}
+                          className="px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm"
+                        >
+                          {variant.cct}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-2">
                       {editingCell?.id === variant.id && editingCell?.field === 'catalogNumber' ? (
                         <input
@@ -385,30 +662,6 @@ export function BatchGeneratorPage() {
                           className="px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm font-mono"
                         >
                           {variant.filename}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      {editingCell?.id === variant.id && editingCell?.field === 'cct' ? (
-                        <input
-                          type="number"
-                          value={variant.cct}
-                          onChange={(e) => updateVariant(variant.id, 'cct', e.target.value)}
-                          onBlur={() => setEditingCell(null)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              setEditingCell(null);
-                            }
-                          }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                          autoFocus
-                        />
-                      ) : (
-                        <div
-                          onClick={() => setEditingCell({id: variant.id, field: 'cct'})}
-                          className="px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm"
-                        >
-                          {variant.cct}
                         </div>
                       )}
                     </td>
@@ -473,6 +726,19 @@ export function BatchGeneratorPage() {
         isOpen={showAddDialog}
         onClose={() => setShowAddDialog(false)}
         onAdd={addVariant}
+      />
+
+      {/* CSV Preview Dialog */}
+      <CSVPreviewDialog
+        isOpen={showCSVPreview}
+        onClose={() => {
+          setShowCSVPreview(false);
+          setPendingCSVData([]);
+        }}
+        onConfirm={applyCSVData}
+        csvData={pendingCSVData}
+        title="Preview CCT Variants CSV"
+        headers={csvHeaders}
       />
     </div>
   );
