@@ -4,6 +4,7 @@ import { useIESFileStore, type BatchFile, type CSVMetadata } from '../store/iesF
 import { iesParser } from '../services/iesParser';
 import { iesGenerator } from '../services/iesGenerator';
 import { csvService, type CSVRow } from '../services/csvService';
+import { photometricCalculator } from '../services/calculator';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { BatchActionBar } from '../components/common/BatchActionBar';
@@ -11,9 +12,12 @@ import { CSVPreviewDialog } from '../components/common/CSVPreviewDialog';
 import { DownloadSettingsDialog } from '../components/common/DownloadSettingsDialog';
 import { BulkEditColumnDialog } from '../components/common/BulkEditColumnDialog';
 
-// Extended CSV row with unit information
+// Extended CSV row with unit information and original dimensions
 interface ExtendedCSVRow extends CSVRow {
   unit?: 'meters' | 'feet';
+  originalLength?: number;
+  originalWidth?: number;
+  originalHeight?: number;
 }
 
 export function BatchMetadataEditorPage() {
@@ -93,7 +97,10 @@ export function BatchMetadataEditorPage() {
           length: parsedFile.photometricData.length.toFixed(3),
           width: parsedFile.photometricData.width.toFixed(3),
           height: parsedFile.photometricData.height.toFixed(3),
-          unit
+          unit,
+          originalLength: parsedFile.photometricData.length,
+          originalWidth: parsedFile.photometricData.width,
+          originalHeight: parsedFile.photometricData.height
         };
 
         newCsvData.push(csvRow);
@@ -188,6 +195,54 @@ export function BatchMetadataEditorPage() {
 
   const updateCell = (rowIndex: number, field: keyof CSVRow, value: string) => {
     const newCsvData = [...csvData];
+    const row = newCsvData[rowIndex];
+    // Match by index since files and csvData are in the same order
+    const batchFile = batchFiles[rowIndex];
+    
+    // Handle dimension changes with photometric scaling
+    if (field === 'length' || field === 'width' || field === 'height') {
+      const newValue = parseFloat(value);
+      if (!isNaN(newValue) && newValue > 0 && batchFile && row.originalLength !== undefined) {
+        // Convert to meters if needed (for scaling calculation)
+        const rowUnit = row.unit || 'meters';
+        const targetUnit = batchFile.photometricData.unitsType === 1 ? 'feet' : 'meters';
+        const needsConversion = rowUnit !== targetUnit;
+        const convertFunc = needsConversion ? 
+          (rowUnit === 'feet' ? feetToMeters : metersToFeet) : 
+          (val: number) => val;
+        
+        const newValueInMeters = convertFunc(newValue);
+        
+        // Determine which dimension changed
+        const dimension: 'length' | 'width' | 'height' = 
+          field === 'length' ? 'length' :
+          field === 'width' ? 'width' : 'height';
+        
+        // Scale photometric data if dimension changed
+        // scaleByDimension will scale from current state to target value
+        // We need to convert target value to the file's unit system
+        const targetDimensionValue = targetUnit === 'feet' ? metersToFeet(newValueInMeters) : newValueInMeters;
+        
+        const result = photometricCalculator.scaleByDimension(
+          batchFile.photometricData,
+          targetDimensionValue,
+          dimension
+        );
+        
+        // Update the batch file in the store
+        const updatedFiles = batchFiles.map(f => {
+          if (f.id === batchFile.id) {
+            return {
+              ...f,
+              photometricData: result.scaledPhotometricData
+            };
+          }
+          return f;
+        });
+        addBatchFiles(updatedFiles);
+      }
+    }
+    
     newCsvData[rowIndex] = { ...newCsvData[rowIndex], [field]: value };
     setCsvData(newCsvData);
 
@@ -228,19 +283,45 @@ export function BatchMetadataEditorPage() {
   };
 
   const convertAllToUnit = (targetUnit: 'meters' | 'feet') => {
+    const newUnitsType = targetUnit === 'feet' ? 1 : 2;
+    const convertFunc = targetUnit === 'feet' ? metersToFeet : feetToMeters;
+    
+    // Update CSV data
     const newCsvData = csvData.map(row => {
       if (row.unit === targetUnit) return row;
       
-      const convertFunc = targetUnit === 'feet' ? metersToFeet : feetToMeters;
       return {
         ...row,
         unit: targetUnit,
         length: row.length ? convertFunc(parseFloat(row.length)).toFixed(3) : row.length,
         width: row.width ? convertFunc(parseFloat(row.width)).toFixed(3) : row.width,
-        height: row.height ? convertFunc(parseFloat(row.height)).toFixed(3) : row.height
+        height: row.height ? convertFunc(parseFloat(row.height)).toFixed(3) : row.height,
+        // Update original dimensions too
+        originalLength: row.originalLength !== undefined ? convertFunc(row.originalLength) : undefined,
+        originalWidth: row.originalWidth !== undefined ? convertFunc(row.originalWidth) : undefined,
+        originalHeight: row.originalHeight !== undefined ? convertFunc(row.originalHeight) : undefined
       };
     });
     
+    // Update batch files to change unitsType and dimensions
+    // Match by index since files and csvData are in the same order
+    const updatedFiles = batchFiles.map((file, index) => {
+      const csvRow = csvData[index];
+      if (!csvRow) return file;
+      
+      return {
+        ...file,
+        photometricData: {
+          ...file.photometricData,
+          unitsType: newUnitsType,
+          width: convertFunc(file.photometricData.width),
+          length: convertFunc(file.photometricData.length),
+          height: convertFunc(file.photometricData.height)
+        }
+      };
+    });
+    
+    addBatchFiles(updatedFiles);
     setCsvData(newCsvData);
   };
 
@@ -277,7 +358,8 @@ export function BatchMetadataEditorPage() {
     try {
       const zip = new JSZip();
 
-      for (const file of batchFiles) {
+      for (let i = 0; i < batchFiles.length; i++) {
+        const file = batchFiles[i];
         let updatedFile = { ...file };
         
         updatedFile.metadata = {
@@ -286,7 +368,9 @@ export function BatchMetadataEditorPage() {
           ...(file.metadataUpdates || {})
         };
 
-        const csvRow = csvData.find(row => row.filename === file.fileName);
+        // Match by index since files and csvData are in the same order
+        // This works even if user has edited the filename in the table
+        const csvRow = csvData[i];
         if (csvRow?.nearField && csvRow.nearField.trim() !== '') {
           updatedFile.metadata.nearField = csvRow.nearField;
         }
@@ -306,25 +390,70 @@ export function BatchMetadataEditorPage() {
             (csvRow.unit === 'feet' ? feetToMeters : metersToFeet) : 
             (val: number) => val;
           
+          // Track which dimensions changed for scaling (compare CSV value against current file state)
+          // If updateCell already scaled the file, the file state matches CSV, so no additional scaling
+          let lengthChanged = false;
+          let widthChanged = false;
+          let heightChanged = false;
+          let newLength = updatedFile.photometricData.length;
+          let newWidth = updatedFile.photometricData.width;
+          let newHeight = updatedFile.photometricData.height;
+          
           if (csvRow.length && csvRow.length.trim() !== '') {
             const length = parseFloat(csvRow.length);
             if (!isNaN(length)) {
-              updatedFile.photometricData.length = convertFunc(length);
+              const convertedLength = convertFunc(length);
+              lengthChanged = Math.abs(convertedLength - updatedFile.photometricData.length) > 0.001;
+              newLength = convertedLength;
             }
           }
           
           if (csvRow.width && csvRow.width.trim() !== '') {
             const width = parseFloat(csvRow.width);
             if (!isNaN(width)) {
-              updatedFile.photometricData.width = convertFunc(width);
+              const convertedWidth = convertFunc(width);
+              widthChanged = Math.abs(convertedWidth - updatedFile.photometricData.width) > 0.001;
+              newWidth = convertedWidth;
             }
           }
           
           if (csvRow.height && csvRow.height.trim() !== '') {
             const height = parseFloat(csvRow.height);
             if (!isNaN(height)) {
-              updatedFile.photometricData.height = convertFunc(height);
+              const convertedHeight = convertFunc(height);
+              heightChanged = Math.abs(convertedHeight - updatedFile.photometricData.height) > 0.001;
+              newHeight = convertedHeight;
             }
+          }
+          
+          // Apply scaling if dimensions changed (prioritize length, then width, then height)
+          // scaleByDimension will scale proportionally from the current state
+          if (lengthChanged) {
+            const result = photometricCalculator.scaleByDimension(
+              updatedFile.photometricData,
+              newLength,
+              'length'
+            );
+            updatedFile.photometricData = result.scaledPhotometricData;
+          } else if (widthChanged) {
+            const result = photometricCalculator.scaleByDimension(
+              updatedFile.photometricData,
+              newWidth,
+              'width'
+            );
+            updatedFile.photometricData = result.scaledPhotometricData;
+          } else if (heightChanged) {
+            const result = photometricCalculator.scaleByDimension(
+              updatedFile.photometricData,
+              newHeight,
+              'height'
+            );
+            updatedFile.photometricData = result.scaledPhotometricData;
+          } else {
+            // Just update dimensions without scaling (in case of unit conversion only)
+            updatedFile.photometricData.length = newLength;
+            updatedFile.photometricData.width = newWidth;
+            updatedFile.photometricData.height = newHeight;
           }
         }
 
@@ -332,7 +461,16 @@ export function BatchMetadataEditorPage() {
         
         let newFilename = file.fileName;
         
-        if (!useOriginalFilename) {
+        if (useOriginalFilename) {
+          // Use filename from table (which can be manually edited)
+          if (csvRow) {
+            newFilename = csvRow.filename;
+            // Ensure .ies extension
+            if (!newFilename.toLowerCase().endsWith('.ies')) {
+              newFilename = `${newFilename}.ies`;
+            }
+          }
+        } else {
           const catalogNumber = catalogNumberSource === 'luminaire'
             ? updatedFile.metadata.luminaireCatalogNumber
             : updatedFile.metadata.lampCatalogNumber;
