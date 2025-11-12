@@ -13,6 +13,38 @@ import { ChartsTab } from '../components/unified/ChartsTab';
 import { View3DTab } from '../components/unified/View3DTab';
 import { Toast } from '../components/common/Toast';
 
+// Helper function to merge metadata, only including non-empty values
+const mergeMetadata = (
+  original: IESMetadata,
+  updates: Partial<IESMetadata>
+): IESMetadata => {
+  const merged = { ...original };
+  
+  // Only update fields that have non-empty values
+  (Object.keys(updates) as Array<keyof IESMetadata>).forEach((key) => {
+    const value = updates[key];
+    
+    // For string fields, only update if value is non-empty
+    if (typeof value === 'string') {
+      if (value.trim() !== '') {
+        (merged as any)[key] = value;
+      }
+    } 
+    // For number fields, only update if value is defined and not NaN
+    else if (typeof value === 'number') {
+      if (!isNaN(value) && value !== undefined) {
+        (merged as any)[key] = value;
+      }
+    }
+    // For other types, update if value is truthy
+    else if (value !== undefined && value !== null) {
+      (merged as any)[key] = value;
+    }
+  });
+  
+  return merged;
+};
+
 export function UnifiedPage() {
   const {
     currentFile,
@@ -131,18 +163,20 @@ export function UnifiedPage() {
   const handleDownload = () => {
     if (!currentFile) return;
     
-    // Create a merged file with all edits applied
-    const fileToGenerate: IESFile = {
-      ...currentFile,
-      metadata: { ...currentFile.metadata, ...editedData },
-      photometricData: { ...currentFile.photometricData, ...editedPhotometricData }
-    };
-    
     // Auto-save any unsaved changes before downloading
     if (isDirty) {
       applyEdits();
       showToastMessage('Changes auto-saved before download', 'info');
     }
+    
+    // Create a merged file with all edits applied - safely merge metadata
+    // Use currentFile which should have edits applied if isDirty was true
+    // Otherwise merge editedData safely
+    const fileToGenerate: IESFile = {
+      ...currentFile,
+      metadata: mergeMetadata(currentFile.metadata, editedData),
+      photometricData: { ...currentFile.photometricData, ...editedPhotometricData }
+    };
     
     // Generate IES content with the merged data
     const iesContent = iesGenerator.generate(fileToGenerate);

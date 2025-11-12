@@ -70,10 +70,39 @@ export const useIESFileStore = create<IESFileStore>((set) => ({
   
   applyEdits: () => set((state) => {
     if (!state.currentFile) return state;
+    
+    // Helper to merge metadata, only including non-empty values
+    const mergeMetadata = (original: IESMetadata, updates: Partial<IESMetadata>): IESMetadata => {
+      const merged = { ...original };
+      
+      (Object.keys(updates) as Array<keyof IESMetadata>).forEach((key) => {
+        const value = updates[key];
+        
+        // For string fields, only update if value is non-empty
+        if (typeof value === 'string') {
+          if (value.trim() !== '') {
+            (merged as any)[key] = value;
+          }
+        } 
+        // For number fields, only update if value is defined and not NaN
+        else if (typeof value === 'number') {
+          if (!isNaN(value) && value !== undefined) {
+            (merged as any)[key] = value;
+          }
+        }
+        // For other types, update if value is truthy
+        else if (value !== undefined && value !== null) {
+          (merged as any)[key] = value;
+        }
+      });
+      
+      return merged;
+    };
+    
     return {
       currentFile: {
         ...state.currentFile,
-        metadata: { ...state.currentFile.metadata, ...state.editedData },
+        metadata: mergeMetadata(state.currentFile.metadata, state.editedData),
         photometricData: { ...state.currentFile.photometricData, ...state.editedPhotometricData }
       },
       editedData: {},
