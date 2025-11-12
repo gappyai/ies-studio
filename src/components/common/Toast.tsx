@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { CheckCircle, X } from 'lucide-react';
+import { CheckCircle, X, AlertCircle, Info } from 'lucide-react';
 
 interface ToastProps {
   message: string;
@@ -8,7 +8,7 @@ interface ToastProps {
   duration?: number;
 }
 
-export function Toast({ message, type = 'success', onClose, duration = 3000 }: ToastProps) {
+export function Toast({ message, type = 'success', onClose, duration = 5000 }: ToastProps) {
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
@@ -21,10 +21,12 @@ export function Toast({ message, type = 'success', onClose, duration = 3000 }: T
   const borderColor = type === 'success' ? 'border-green-200' : type === 'error' ? 'border-red-200' : 'border-blue-200';
   const textColor = type === 'success' ? 'text-green-800' : type === 'error' ? 'text-red-800' : 'text-blue-800';
   const iconColor = type === 'success' ? 'text-green-600' : type === 'error' ? 'text-red-600' : 'text-blue-600';
+  
+  const Icon = type === 'success' ? CheckCircle : type === 'error' ? AlertCircle : Info;
 
   return (
     <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 ${bgColor} border ${borderColor} rounded-lg shadow-lg animate-slide-in-right max-w-md`}>
-      <CheckCircle className={`w-5 h-5 ${iconColor} flex-shrink-0`} />
+      <Icon className={`w-5 h-5 ${iconColor} flex-shrink-0`} />
       <p className={`text-sm font-medium ${textColor} flex-1`}>{message}</p>
       <button
         onClick={onClose}

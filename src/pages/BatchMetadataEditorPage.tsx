@@ -11,6 +11,7 @@ import { BatchActionBar } from '../components/common/BatchActionBar';
 import { CSVPreviewDialog } from '../components/common/CSVPreviewDialog';
 import { DownloadSettingsDialog } from '../components/common/DownloadSettingsDialog';
 import { BulkEditColumnDialog } from '../components/common/BulkEditColumnDialog';
+import { Toast } from '../components/common/Toast';
 import type { IESMetadata } from '../types/ies.types';
 
 // Extended CSV row with unit information and original dimensions
@@ -29,10 +30,14 @@ export function BatchMetadataEditorPage() {
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [useOriginalFilename, setUseOriginalFilename] = useState(false);
   const [catalogNumberSource, setCatalogNumberSource] = useState<'luminaire' | 'lamp'>('luminaire');
+  const [catalogNumberPrefix, setCatalogNumberPrefix] = useState<string>('_IES');
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [showCSVPreview, setShowCSVPreview] = useState(false);
   const [pendingCSVData, setPendingCSVData] = useState<CSVRow[]>([]);
   const [bulkEditColumn, setBulkEditColumn] = useState<keyof CSVRow | null>(null);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'info' | 'error'>('info');
   
   const csvHeaders: (keyof CSVRow)[] = [
     'filename',
@@ -462,12 +467,21 @@ export function BatchMetadataEditorPage() {
     setCSVMetadata(metadata);
   };
 
+  const showToastMessage = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
+  };
+
   const downloadProcessedFiles = async () => {
     if (batchFiles.length === 0) return;
 
     setProcessing(true);
+    const missingCatalogNumbers: string[] = [];
+    
     try {
       const zip = new JSZip();
+      const prefix = catalogNumberPrefix || '_IES';
 
       for (let i = 0; i < batchFiles.length; i++) {
         const file = batchFiles[i];
@@ -587,20 +601,55 @@ export function BatchMetadataEditorPage() {
             }
           }
         } else {
-          const catalogNumber = catalogNumberSource === 'luminaire'
-            ? updatedFile.metadata.luminaireCatalogNumber
-            : updatedFile.metadata.lampCatalogNumber;
+          // Try to get catalog number based on source preference
+          let catalogNumber: string | undefined;
           
-          if (catalogNumber && catalogNumber.trim() !== '') {
-            newFilename = catalogNumber.endsWith('.ies') ? catalogNumber : `${catalogNumber}.ies`;
+          if (catalogNumberSource === 'luminaire') {
+            catalogNumber = updatedFile.metadata.luminaireCatalogNumber?.trim();
+            // Fallback to lamp catalog number if luminaire is not available
+            if (!catalogNumber || catalogNumber === '') {
+              catalogNumber = updatedFile.metadata.lampCatalogNumber?.trim();
+            }
+          } else {
+            catalogNumber = updatedFile.metadata.lampCatalogNumber?.trim();
+            // Fallback to luminaire catalog number if lamp is not available
+            if (!catalogNumber || catalogNumber === '') {
+              catalogNumber = updatedFile.metadata.luminaireCatalogNumber?.trim();
+            }
+          }
+          
+          if (catalogNumber && catalogNumber !== '') {
+            // Remove .ies extension if present, then add prefix and .ies
+            const cleanCatalogNumber = catalogNumber.replace(/\.ies$/i, '');
+            newFilename = `${cleanCatalogNumber}${prefix}.ies`;
+          } else {
+            // No catalog number available - use original filename and track for toast
+            newFilename = file.fileName;
+            const displayName = csvRow?.filename || file.fileName;
+            missingCatalogNumbers.push(displayName);
           }
         }
 
         zip.file(newFilename, iesContent);
       }
 
+      // Show toast if any files are missing catalog numbers
+      if (missingCatalogNumbers.length > 0) {
+        const fileList = missingCatalogNumbers.length <= 5 
+          ? missingCatalogNumbers.join(', ')
+          : `${missingCatalogNumbers.slice(0, 5).join(', ')} and ${missingCatalogNumbers.length - 5} more`;
+        showToastMessage(
+          `Warning: ${missingCatalogNumbers.length} file(s) missing catalog number. Using original filename: ${fileList}`,
+          'error'
+        );
+      }
+
       const blob = await zip.generateAsync({ type: 'blob' });
       saveAs(blob, 'processed_ies_files.zip');
+      
+      if (missingCatalogNumbers.length === 0) {
+        showToastMessage('Files downloaded successfully', 'success');
+      }
     } catch (error) {
       alert('Error processing files: ' + (error as Error).message);
     } finally {
@@ -862,6 +911,8 @@ export function BatchMetadataEditorPage() {
         setUseOriginalFilename={setUseOriginalFilename}
         catalogNumberSource={catalogNumberSource}
         setCatalogNumberSource={setCatalogNumberSource}
+        catalogNumberPrefix={catalogNumberPrefix}
+        setCatalogNumberPrefix={setCatalogNumberPrefix}
       />
 
       <CSVPreviewDialog
@@ -883,6 +934,15 @@ export function BatchMetadataEditorPage() {
         columnName={bulkEditColumn ? getColumnDisplayName(bulkEditColumn) : ''}
         rowCount={csvData.length}
       />
+
+      {/* Toast Notification */}
+      {showToast && (
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+        />
+      )}
     </div>
   );
 }
