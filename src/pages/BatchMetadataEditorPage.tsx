@@ -11,6 +11,8 @@ import { BatchActionBar } from '../components/common/BatchActionBar';
 import { CSVPreviewDialog } from '../components/common/CSVPreviewDialog';
 import { DownloadSettingsDialog } from '../components/common/DownloadSettingsDialog';
 import { BulkEditColumnDialog } from '../components/common/BulkEditColumnDialog';
+import { Toast } from '../components/common/Toast';
+import type { IESMetadata } from '../types/ies.types';
 
 // Extended CSV row with unit information and original dimensions
 interface ExtendedCSVRow extends CSVRow {
@@ -28,10 +30,14 @@ export function BatchMetadataEditorPage() {
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [useOriginalFilename, setUseOriginalFilename] = useState(false);
   const [catalogNumberSource, setCatalogNumberSource] = useState<'luminaire' | 'lamp'>('luminaire');
+  const [catalogNumberPrefix, setCatalogNumberPrefix] = useState<string>('_IES');
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [showCSVPreview, setShowCSVPreview] = useState(false);
   const [pendingCSVData, setPendingCSVData] = useState<CSVRow[]>([]);
   const [bulkEditColumn, setBulkEditColumn] = useState<keyof CSVRow | null>(null);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'info' | 'error'>('info');
   
   const csvHeaders: (keyof CSVRow)[] = [
     'filename',
@@ -53,6 +59,38 @@ export function BatchMetadataEditorPage() {
 
   const metersToFeet = (meters: number) => meters * 3.28084;
   const feetToMeters = (feet: number) => feet / 3.28084;
+
+  // Helper function to merge metadata, only including non-empty values
+  const mergeMetadata = (
+    original: IESMetadata,
+    updates: Partial<IESMetadata>
+  ): IESMetadata => {
+    const merged = { ...original };
+    
+    // Only update fields that have non-empty values
+    (Object.keys(updates) as Array<keyof IESMetadata>).forEach((key) => {
+      const value = updates[key];
+      
+      // For string fields, only update if value is non-empty
+      if (typeof value === 'string') {
+        if (value.trim() !== '') {
+          (merged as any)[key] = value;
+        }
+      } 
+      // For number fields, only update if value is defined and not NaN
+      else if (typeof value === 'number') {
+        if (!isNaN(value) && value !== undefined) {
+          (merged as any)[key] = value;
+        }
+      }
+      // For other types, update if value is truthy
+      else if (value !== undefined && value !== null) {
+        (merged as any)[key] = value;
+      }
+    });
+    
+    return merged;
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -170,18 +208,44 @@ export function BatchMetadataEditorPage() {
     
     const metadata: CSVMetadata = {};
     updatedData.forEach(row => {
-      metadata[row.filename] = {
-        manufacturer: row.manufacturer,
-        luminaireCatalogNumber: row.luminaireCatalogNumber,
-        lampCatalogNumber: row.lampCatalogNumber,
-        test: row.test,
-        testLab: row.testLab,
-        testDate: row.testDate,
-        issueDate: row.issueDate,
-        lampPosition: row.lampPosition,
-        other: row.other,
-        nearField: row.nearField
-      };
+      // Only include non-empty values in metadata
+      const rowMetadata: Partial<IESMetadata> = {};
+      
+      if (row.manufacturer && row.manufacturer.trim() !== '') {
+        rowMetadata.manufacturer = row.manufacturer;
+      }
+      if (row.luminaireCatalogNumber && row.luminaireCatalogNumber.trim() !== '') {
+        rowMetadata.luminaireCatalogNumber = row.luminaireCatalogNumber;
+      }
+      if (row.lampCatalogNumber && row.lampCatalogNumber.trim() !== '') {
+        rowMetadata.lampCatalogNumber = row.lampCatalogNumber;
+      }
+      if (row.test && row.test.trim() !== '') {
+        rowMetadata.test = row.test;
+      }
+      if (row.testLab && row.testLab.trim() !== '') {
+        rowMetadata.testLab = row.testLab;
+      }
+      if (row.testDate && row.testDate.trim() !== '') {
+        rowMetadata.testDate = row.testDate;
+      }
+      if (row.issueDate && row.issueDate.trim() !== '') {
+        rowMetadata.issueDate = row.issueDate;
+      }
+      if (row.lampPosition && row.lampPosition.trim() !== '') {
+        rowMetadata.lampPosition = row.lampPosition;
+      }
+      if (row.other && row.other.trim() !== '') {
+        rowMetadata.other = row.other;
+      }
+      if (row.nearField && row.nearField.trim() !== '') {
+        rowMetadata.nearField = row.nearField;
+      }
+      
+      // Only add to metadata if there are actual updates
+      if (Object.keys(rowMetadata).length > 0) {
+        metadata[row.filename] = rowMetadata;
+      }
     });
     setCSVMetadata(metadata);
     setPendingCSVData([]);
@@ -248,18 +312,44 @@ export function BatchMetadataEditorPage() {
 
     const metadata: CSVMetadata = {};
     newCsvData.forEach(row => {
-      metadata[row.filename] = {
-        manufacturer: row.manufacturer,
-        luminaireCatalogNumber: row.luminaireCatalogNumber,
-        lampCatalogNumber: row.lampCatalogNumber,
-        test: row.test,
-        testLab: row.testLab,
-        testDate: row.testDate,
-        issueDate: row.issueDate,
-        lampPosition: row.lampPosition,
-        other: row.other,
-        nearField: row.nearField
-      };
+      // Only include non-empty values in metadata
+      const rowMetadata: Partial<IESMetadata> = {};
+      
+      if (row.manufacturer && row.manufacturer.trim() !== '') {
+        rowMetadata.manufacturer = row.manufacturer;
+      }
+      if (row.luminaireCatalogNumber && row.luminaireCatalogNumber.trim() !== '') {
+        rowMetadata.luminaireCatalogNumber = row.luminaireCatalogNumber;
+      }
+      if (row.lampCatalogNumber && row.lampCatalogNumber.trim() !== '') {
+        rowMetadata.lampCatalogNumber = row.lampCatalogNumber;
+      }
+      if (row.test && row.test.trim() !== '') {
+        rowMetadata.test = row.test;
+      }
+      if (row.testLab && row.testLab.trim() !== '') {
+        rowMetadata.testLab = row.testLab;
+      }
+      if (row.testDate && row.testDate.trim() !== '') {
+        rowMetadata.testDate = row.testDate;
+      }
+      if (row.issueDate && row.issueDate.trim() !== '') {
+        rowMetadata.issueDate = row.issueDate;
+      }
+      if (row.lampPosition && row.lampPosition.trim() !== '') {
+        rowMetadata.lampPosition = row.lampPosition;
+      }
+      if (row.other && row.other.trim() !== '') {
+        rowMetadata.other = row.other;
+      }
+      if (row.nearField && row.nearField.trim() !== '') {
+        rowMetadata.nearField = row.nearField;
+      }
+      
+      // Only add to metadata if there are actual updates
+      if (Object.keys(rowMetadata).length > 0) {
+        metadata[row.filename] = rowMetadata;
+      }
     });
     setCSVMetadata(metadata);
   };
@@ -332,50 +422,90 @@ export function BatchMetadataEditorPage() {
     }));
     setCsvData(newCsvData);
 
-    // Update metadata if applicable
+    // Update metadata if applicable - only include non-empty values
     const metadata: CSVMetadata = {};
     newCsvData.forEach(row => {
-      metadata[row.filename] = {
-        manufacturer: row.manufacturer,
-        luminaireCatalogNumber: row.luminaireCatalogNumber,
-        lampCatalogNumber: row.lampCatalogNumber,
-        test: row.test,
-        testLab: row.testLab,
-        testDate: row.testDate,
-        issueDate: row.issueDate,
-        lampPosition: row.lampPosition,
-        other: row.other,
-        nearField: row.nearField
-      };
+      // Only include non-empty values in metadata
+      const rowMetadata: Partial<IESMetadata> = {};
+      
+      if (row.manufacturer && row.manufacturer.trim() !== '') {
+        rowMetadata.manufacturer = row.manufacturer;
+      }
+      if (row.luminaireCatalogNumber && row.luminaireCatalogNumber.trim() !== '') {
+        rowMetadata.luminaireCatalogNumber = row.luminaireCatalogNumber;
+      }
+      if (row.lampCatalogNumber && row.lampCatalogNumber.trim() !== '') {
+        rowMetadata.lampCatalogNumber = row.lampCatalogNumber;
+      }
+      if (row.test && row.test.trim() !== '') {
+        rowMetadata.test = row.test;
+      }
+      if (row.testLab && row.testLab.trim() !== '') {
+        rowMetadata.testLab = row.testLab;
+      }
+      if (row.testDate && row.testDate.trim() !== '') {
+        rowMetadata.testDate = row.testDate;
+      }
+      if (row.issueDate && row.issueDate.trim() !== '') {
+        rowMetadata.issueDate = row.issueDate;
+      }
+      if (row.lampPosition && row.lampPosition.trim() !== '') {
+        rowMetadata.lampPosition = row.lampPosition;
+      }
+      if (row.other && row.other.trim() !== '') {
+        rowMetadata.other = row.other;
+      }
+      if (row.nearField && row.nearField.trim() !== '') {
+        rowMetadata.nearField = row.nearField;
+      }
+      
+      // Only add to metadata if there are actual updates
+      if (Object.keys(rowMetadata).length > 0) {
+        metadata[row.filename] = rowMetadata;
+      }
     });
     setCSVMetadata(metadata);
+  };
+
+  const showToastMessage = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
   };
 
   const downloadProcessedFiles = async () => {
     if (batchFiles.length === 0) return;
 
     setProcessing(true);
+    const missingCatalogNumbers: string[] = [];
+    
     try {
       const zip = new JSZip();
+      const prefix = catalogNumberPrefix || '_IES';
 
       for (let i = 0; i < batchFiles.length; i++) {
         const file = batchFiles[i];
         let updatedFile = { ...file };
         
-        updatedFile.metadata = {
-          ...file.metadata,
-          ...(csvMetadata[file.fileName] || {}),
-          ...(file.metadataUpdates || {})
-        };
+        // Safely merge metadata - preserve original, only update with non-empty values
+        updatedFile.metadata = mergeMetadata(
+          file.metadata,
+          {
+            ...(csvMetadata[file.fileName] || {}),
+            ...(file.metadataUpdates || {})
+          }
+        );
 
         // Match by index since files and csvData are in the same order
         // This works even if user has edited the filename in the table
         const csvRow = csvData[i];
-        if (csvRow?.nearField && csvRow.nearField.trim() !== '') {
-          updatedFile.metadata.nearField = csvRow.nearField;
-        }
-
+        
+        // Handle nearField and CCT from CSV row if present
         if (csvRow) {
+          if (csvRow.nearField && csvRow.nearField.trim() !== '') {
+            updatedFile.metadata.nearField = csvRow.nearField;
+          }
+          
           if (csvRow.cct && csvRow.cct.trim() !== '') {
             const cct = parseFloat(csvRow.cct);
             if (!isNaN(cct)) {
@@ -471,20 +601,55 @@ export function BatchMetadataEditorPage() {
             }
           }
         } else {
-          const catalogNumber = catalogNumberSource === 'luminaire'
-            ? updatedFile.metadata.luminaireCatalogNumber
-            : updatedFile.metadata.lampCatalogNumber;
+          // Try to get catalog number based on source preference
+          let catalogNumber: string | undefined;
           
-          if (catalogNumber && catalogNumber.trim() !== '') {
-            newFilename = catalogNumber.endsWith('.ies') ? catalogNumber : `${catalogNumber}.ies`;
+          if (catalogNumberSource === 'luminaire') {
+            catalogNumber = updatedFile.metadata.luminaireCatalogNumber?.trim();
+            // Fallback to lamp catalog number if luminaire is not available
+            if (!catalogNumber || catalogNumber === '') {
+              catalogNumber = updatedFile.metadata.lampCatalogNumber?.trim();
+            }
+          } else {
+            catalogNumber = updatedFile.metadata.lampCatalogNumber?.trim();
+            // Fallback to luminaire catalog number if lamp is not available
+            if (!catalogNumber || catalogNumber === '') {
+              catalogNumber = updatedFile.metadata.luminaireCatalogNumber?.trim();
+            }
+          }
+          
+          if (catalogNumber && catalogNumber !== '') {
+            // Remove .ies extension if present, then add prefix and .ies
+            const cleanCatalogNumber = catalogNumber.replace(/\.ies$/i, '');
+            newFilename = `${cleanCatalogNumber}${prefix}.ies`;
+          } else {
+            // No catalog number available - use original filename and track for toast
+            newFilename = file.fileName;
+            const displayName = csvRow?.filename || file.fileName;
+            missingCatalogNumbers.push(displayName);
           }
         }
 
         zip.file(newFilename, iesContent);
       }
 
+      // Show toast if any files are missing catalog numbers
+      if (missingCatalogNumbers.length > 0) {
+        const fileList = missingCatalogNumbers.length <= 5 
+          ? missingCatalogNumbers.join(', ')
+          : `${missingCatalogNumbers.slice(0, 5).join(', ')} and ${missingCatalogNumbers.length - 5} more`;
+        showToastMessage(
+          `Warning: ${missingCatalogNumbers.length} file(s) missing catalog number. Using original filename: ${fileList}`,
+          'error'
+        );
+      }
+
       const blob = await zip.generateAsync({ type: 'blob' });
       saveAs(blob, 'processed_ies_files.zip');
+      
+      if (missingCatalogNumbers.length === 0) {
+        showToastMessage('Files downloaded successfully', 'success');
+      }
     } catch (error) {
       alert('Error processing files: ' + (error as Error).message);
     } finally {
@@ -746,6 +911,8 @@ export function BatchMetadataEditorPage() {
         setUseOriginalFilename={setUseOriginalFilename}
         catalogNumberSource={catalogNumberSource}
         setCatalogNumberSource={setCatalogNumberSource}
+        catalogNumberPrefix={catalogNumberPrefix}
+        setCatalogNumberPrefix={setCatalogNumberPrefix}
       />
 
       <CSVPreviewDialog
@@ -767,6 +934,15 @@ export function BatchMetadataEditorPage() {
         columnName={bulkEditColumn ? getColumnDisplayName(bulkEditColumn) : ''}
         rowCount={csvData.length}
       />
+
+      {/* Toast Notification */}
+      {showToast && (
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+        />
+      )}
     </div>
   );
 }

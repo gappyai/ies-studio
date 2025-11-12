@@ -7,6 +7,8 @@ interface DownloadSettingsDialogProps {
   setUseOriginalFilename: (value: boolean) => void;
   catalogNumberSource: 'luminaire' | 'lamp';
   setCatalogNumberSource: (value: 'luminaire' | 'lamp') => void;
+  catalogNumberPrefix: string;
+  setCatalogNumberPrefix: (value: string) => void;
 }
 
 export function DownloadSettingsDialog({
@@ -15,7 +17,9 @@ export function DownloadSettingsDialog({
   useOriginalFilename,
   setUseOriginalFilename,
   catalogNumberSource,
-  setCatalogNumberSource
+  setCatalogNumberSource,
+  catalogNumberPrefix,
+  setCatalogNumberPrefix
 }: DownloadSettingsDialogProps) {
   if (!isOpen) return null;
 
@@ -57,26 +61,43 @@ export function DownloadSettingsDialog({
             </div>
             
             {!useOriginalFilename && (
-              <div className="mt-4 ml-6 space-y-2">
-                <p className="text-xs text-gray-600 mb-2">Which catalog number to use:</p>
-                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <div className="mt-4 ml-6 space-y-4">
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-600 mb-2">Which catalog number to use:</p>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={catalogNumberSource === 'luminaire'}
+                      onChange={() => setCatalogNumberSource('luminaire')}
+                      className="text-blue-600 focus:ring-blue-500"
+                    />
+                    Luminaire Catalog Number (preferred)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={catalogNumberSource === 'lamp'}
+                      onChange={() => setCatalogNumberSource('lamp')}
+                      className="text-blue-600 focus:ring-blue-500"
+                    />
+                    Lamp Catalog Number (fallback)
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Prefix (e.g., "_IES")
+                  </label>
                   <input
-                    type="radio"
-                    checked={catalogNumberSource === 'luminaire'}
-                    onChange={() => setCatalogNumberSource('luminaire')}
-                    className="text-blue-600 focus:ring-blue-500"
+                    type="text"
+                    value={catalogNumberPrefix}
+                    onChange={(e) => setCatalogNumberPrefix(e.target.value)}
+                    placeholder="_IES"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
-                  Luminaire Catalog Number (preferred)
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={catalogNumberSource === 'lamp'}
-                    onChange={() => setCatalogNumberSource('lamp')}
-                    className="text-blue-600 focus:ring-blue-500"
-                  />
-                  Lamp Catalog Number (fallback)
-                </label>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Filename will be: <span className="font-mono text-gray-700">catalognumber{catalogNumberPrefix || '_IES'}.ies</span>
+                  </p>
+                </div>
               </div>
             )}
           </div>
