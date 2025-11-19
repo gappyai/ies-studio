@@ -94,10 +94,10 @@ export class CSVService {
       headers.forEach((header, index) => {
         const mappedField = headerMap[header];
         if (mappedField && index < values.length) {
-          if (mappedField === 'update_file_name') {
+          if ((mappedField as string) === 'update_file_name') {
             (row as any).update_file_name = values[index].trim();
           } else {
-            row[mappedField] = values[index].trim();
+            row[mappedField as keyof CSVRow] = values[index].trim();
           }
         }
       });
