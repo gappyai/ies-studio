@@ -20,6 +20,9 @@ interface ExtendedCSVRow extends CSVRow {
   originalLength?: number;
   originalWidth?: number;
   originalHeight?: number;
+  originalWattage?: number;
+  originalLumens?: number;
+  update_file_name?: string;
 }
 
 export function BatchMetadataEditorPage() {
@@ -38,7 +41,9 @@ export function BatchMetadataEditorPage() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'info' | 'error'>('info');
+  const [autoAdjustWattage, setAutoAdjustWattage] = useState(false);
   
+  // Headers for table display (update_file_name is not shown in UI, only in CSV)
   const csvHeaders: (keyof CSVRow)[] = [
     'filename',
     'manufacturer',
@@ -52,6 +57,8 @@ export function BatchMetadataEditorPage() {
     'other',
     'nearField',
     'cct',
+    'wattage',
+    'lumens',
     'length',
     'width',
     'height'
@@ -132,13 +139,18 @@ export function BatchMetadataEditorPage() {
           other: parsedFile.metadata.other || '',
           nearField: parsedFile.metadata.nearField || '',
           cct: parsedFile.metadata.colorTemperature?.toString() || '',
+          wattage: parsedFile.photometricData.inputWatts.toFixed(2),
+          lumens: parsedFile.photometricData.totalLumens.toFixed(0),
           length: parsedFile.photometricData.length.toFixed(3),
           width: parsedFile.photometricData.width.toFixed(3),
           height: parsedFile.photometricData.height.toFixed(3),
           unit,
           originalLength: parsedFile.photometricData.length,
           originalWidth: parsedFile.photometricData.width,
-          originalHeight: parsedFile.photometricData.height
+          originalHeight: parsedFile.photometricData.height,
+          originalWattage: parsedFile.photometricData.inputWatts,
+          originalLumens: parsedFile.photometricData.totalLumens,
+          update_file_name: ''
         };
 
         newCsvData.push(csvRow);
@@ -198,16 +210,118 @@ export function BatchMetadataEditorPage() {
         unit = existingRow.unit;
       }
       
+      // Preserve original values
+      const originalWattage = existingRow?.originalWattage;
+      const originalLumens = existingRow?.originalLumens;
+      const originalLength = existingRow?.originalLength;
+      const originalWidth = existingRow?.originalWidth;
+      const originalHeight = existingRow?.originalHeight;
+      
+      // Store original filename for matching (before update_file_name changes it)
+      const originalFilename = existingRow?.filename || newRow.filename;
+      
+      // Handle update_file_name - update filename if provided
+      let filename = originalFilename;
+      if ((newRow as any).update_file_name && (newRow as any).update_file_name.trim() !== '') {
+        filename = (newRow as any).update_file_name.trim();
+        // Ensure .ies extension
+        if (!filename.toLowerCase().endsWith('.ies')) {
+          filename = `${filename}.ies`;
+        }
+      }
+      
       return {
         ...newRow,
-        unit
-      } as ExtendedCSVRow;
+        filename,
+        unit,
+        originalWattage,
+        originalLumens,
+        originalLength,
+        originalWidth,
+        originalHeight,
+        // Store original filename for matching batch files
+        _originalFilename: originalFilename
+      } as ExtendedCSVRow & { _originalFilename?: string };
     });
     
-    setCsvData(updatedData);
+    // Update batch files with wattage and lumens changes
+    // First pass: update wattage (which auto-adjusts lumens)
+    // Second pass: update lumens if it was changed from original
+    const updatedFiles = batchFiles.map((file, index) => {
+      // Match by original filename (before update_file_name changes it)
+      const csvRow = updatedData.find(r => {
+        const matchFilename = (r as any)._originalFilename || r.filename;
+        const originalFilename = csvData[index]?.filename || file.fileName;
+        return matchFilename === originalFilename || matchFilename === file.fileName;
+      }) || updatedData[index];
+      
+      if (!csvRow) return file;
+      
+      let updatedFile = { ...file };
+      
+      // Store original CSV values before any modifications
+      const csvWattage = csvRow.wattage ? parseFloat(csvRow.wattage) : NaN;
+      const csvLumens = csvRow.lumens ? parseFloat(csvRow.lumens) : NaN;
+      
+      // Check if wattage changed from original
+      const wattageChanged = !isNaN(csvWattage) && csvRow.originalWattage !== undefined &&
+        Math.abs(csvWattage - csvRow.originalWattage) > 0.01;
+      
+      // Check if lumens changed from original (using CSV value, not auto-adjusted)
+      const lumensChanged = !isNaN(csvLumens) && csvRow.originalLumens !== undefined &&
+        Math.abs(csvLumens - csvRow.originalLumens) > 0.1;
+      
+      // Apply wattage change first (auto-adjusts lumens and candela)
+      if (wattageChanged) {
+        const result = photometricCalculator.scaleByWattage(
+          updatedFile.photometricData,
+          csvWattage
+        );
+        updatedFile.photometricData = result.scaledPhotometricData;
+      }
+      
+      // Apply lumens change second (only if it was explicitly changed from original)
+      // This allows overriding the auto-adjusted lumens from wattage change
+      if (lumensChanged) {
+        const result = photometricCalculator.scaleByLumens(
+          updatedFile.photometricData,
+          csvLumens,
+          autoAdjustWattage
+        );
+        updatedFile.photometricData = result.scaledPhotometricData;
+      }
+      
+      // Update CSV data with final values for UI display
+      const rowIndex = updatedData.findIndex(r => {
+        const matchFilename = (r as any)._originalFilename || r.filename;
+        const originalFilename = csvData[index]?.filename || file.fileName;
+        return matchFilename === originalFilename || matchFilename === file.fileName;
+      });
+      
+      if (rowIndex !== -1) {
+        // Update wattage if it was changed
+        if (wattageChanged) {
+          updatedData[rowIndex].wattage = updatedFile.photometricData.inputWatts.toFixed(2);
+        }
+        // Update lumens with final value (either from CSV or auto-adjusted)
+        if (lumensChanged) {
+          updatedData[rowIndex].lumens = updatedFile.photometricData.totalLumens.toFixed(0);
+        } else if (wattageChanged) {
+          // If only wattage changed, show auto-adjusted lumens
+          updatedData[rowIndex].lumens = updatedFile.photometricData.totalLumens.toFixed(0);
+        }
+      }
+      
+      return updatedFile;
+    });
+    
+    addBatchFiles(updatedFiles);
+    // Remove temporary _originalFilename property before setting CSV data
+    const cleanedData = updatedData.map(({ _originalFilename, ...row }) => row);
+    setCsvData(cleanedData);
     
     const metadata: CSVMetadata = {};
-    updatedData.forEach(row => {
+    cleanedData.forEach(row => {
       // Only include non-empty values in metadata
       const rowMetadata: Partial<IESMetadata> = {};
       
@@ -252,7 +366,27 @@ export function BatchMetadataEditorPage() {
   };
 
   const exportCSV = () => {
-    const csvContent = csvService.exportCSV(csvData, true);
+    // Create CSV with all columns including wattage, lumens, and update_file_name
+    const headers = ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField', 'cct', 'wattage', 'lumens', 'length', 'width', 'height', 'unit', 'update_file_name'];
+    
+    const displayHeaders = headers.map(header => {
+      if (header === 'cct') return 'cct (K)';
+      if (header === 'update_file_name') return 'update_file_name';
+      return header;
+    });
+    
+    const csvRows = csvData.map(row => {
+      return headers.map(header => {
+        const value = (header === 'update_file_name' ? (row as any).update_file_name : row[header as keyof CSVRow]) || '';
+        // Escape commas and quotes in values
+        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      }).join(',');
+    });
+    
+    const csvContent = [displayHeaders.join(','), ...csvRows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     saveAs(blob, 'batch_metadata_template.csv');
   };
@@ -262,6 +396,88 @@ export function BatchMetadataEditorPage() {
     const row = newCsvData[rowIndex];
     // Match by index since files and csvData are in the same order
     const batchFile = batchFiles[rowIndex];
+    
+    // Handle filename update - filename column is directly editable
+    if (field === 'filename') {
+      let newFilename = value.trim();
+      if (newFilename && !newFilename.toLowerCase().endsWith('.ies')) {
+        newFilename = `${newFilename}.ies`;
+      }
+      newCsvData[rowIndex] = { ...newCsvData[rowIndex], filename: newFilename || row.filename };
+      setCsvData(newCsvData);
+      updateMetadataFromCSV(newCsvData);
+      return;
+    }
+    
+    // Handle wattage changes
+    if (field === 'wattage') {
+      const newWattage = parseFloat(value);
+      if (!isNaN(newWattage) && newWattage > 0 && batchFile && row.originalWattage !== undefined) {
+        // Scale photometric data by wattage (auto-adjusts lumens and candela)
+        const result = photometricCalculator.scaleByWattage(
+          batchFile.photometricData,
+          newWattage
+        );
+        
+        // Update the batch file in the store
+        const updatedFiles = batchFiles.map(f => {
+          if (f.id === batchFile.id) {
+            return {
+              ...f,
+              photometricData: result.scaledPhotometricData
+            };
+          }
+          return f;
+        });
+        addBatchFiles(updatedFiles);
+        
+        // Update lumens in CSV to reflect auto-adjusted value
+        const updatedRow = { ...row, wattage: value, lumens: result.scaledPhotometricData.totalLumens.toFixed(0) };
+        newCsvData[rowIndex] = updatedRow;
+        setCsvData(newCsvData);
+        
+        // Update metadata
+        updateMetadataFromCSV(newCsvData);
+        return;
+      }
+    }
+    
+    // Handle lumens changes
+    if (field === 'lumens') {
+      const newLumens = parseFloat(value);
+      if (!isNaN(newLumens) && newLumens > 0 && batchFile && row.originalLumens !== undefined) {
+        // Scale photometric data by lumens
+        const result = photometricCalculator.scaleByLumens(
+          batchFile.photometricData,
+          newLumens,
+          autoAdjustWattage
+        );
+        
+        // Update the batch file in the store
+        const updatedFiles = batchFiles.map(f => {
+          if (f.id === batchFile.id) {
+            return {
+              ...f,
+              photometricData: result.scaledPhotometricData
+            };
+          }
+          return f;
+        });
+        addBatchFiles(updatedFiles);
+        
+        // Update wattage in CSV if auto-adjust is enabled
+        const updatedRow = { ...row, lumens: value };
+        if (autoAdjustWattage) {
+          updatedRow.wattage = result.scaledPhotometricData.inputWatts.toFixed(2);
+        }
+        newCsvData[rowIndex] = updatedRow;
+        setCsvData(newCsvData);
+        
+        // Update metadata
+        updateMetadataFromCSV(newCsvData);
+        return;
+      }
+    }
     
     // Handle dimension changes with photometric scaling
     if (field === 'length' || field === 'width' || field === 'height') {
@@ -309,9 +525,12 @@ export function BatchMetadataEditorPage() {
     
     newCsvData[rowIndex] = { ...newCsvData[rowIndex], [field]: value };
     setCsvData(newCsvData);
-
+    updateMetadataFromCSV(newCsvData);
+  };
+  
+  const updateMetadataFromCSV = (data: ExtendedCSVRow[]) => {
     const metadata: CSVMetadata = {};
-    newCsvData.forEach(row => {
+    data.forEach(row => {
       // Only include non-empty values in metadata
       const rowMetadata: Partial<IESMetadata> = {};
       
@@ -416,55 +635,70 @@ export function BatchMetadataEditorPage() {
   };
 
   const handleBulkEdit = (field: keyof CSVRow, value: string) => {
-    const newCsvData = csvData.map(row => ({
-      ...row,
-      [field]: value
-    }));
-    setCsvData(newCsvData);
-
-    // Update metadata if applicable - only include non-empty values
-    const metadata: CSVMetadata = {};
-    newCsvData.forEach(row => {
-      // Only include non-empty values in metadata
-      const rowMetadata: Partial<IESMetadata> = {};
+    const newCsvData = csvData.map((row, index) => {
+      const updatedRow = { ...row, [field]: value };
       
-      if (row.manufacturer && row.manufacturer.trim() !== '') {
-        rowMetadata.manufacturer = row.manufacturer;
-      }
-      if (row.luminaireCatalogNumber && row.luminaireCatalogNumber.trim() !== '') {
-        rowMetadata.luminaireCatalogNumber = row.luminaireCatalogNumber;
-      }
-      if (row.lampCatalogNumber && row.lampCatalogNumber.trim() !== '') {
-        rowMetadata.lampCatalogNumber = row.lampCatalogNumber;
-      }
-      if (row.test && row.test.trim() !== '') {
-        rowMetadata.test = row.test;
-      }
-      if (row.testLab && row.testLab.trim() !== '') {
-        rowMetadata.testLab = row.testLab;
-      }
-      if (row.testDate && row.testDate.trim() !== '') {
-        rowMetadata.testDate = row.testDate;
-      }
-      if (row.issueDate && row.issueDate.trim() !== '') {
-        rowMetadata.issueDate = row.issueDate;
-      }
-      if (row.lampPosition && row.lampPosition.trim() !== '') {
-        rowMetadata.lampPosition = row.lampPosition;
-      }
-      if (row.other && row.other.trim() !== '') {
-        rowMetadata.other = row.other;
-      }
-      if (row.nearField && row.nearField.trim() !== '') {
-        rowMetadata.nearField = row.nearField;
+      // Handle filename - ensure .ies extension
+      if (field === 'filename' && value.trim() !== '') {
+        let newFilename = value.trim();
+        if (!newFilename.toLowerCase().endsWith('.ies')) {
+          newFilename = `${newFilename}.ies`;
+        }
+        updatedRow.filename = newFilename;
       }
       
-      // Only add to metadata if there are actual updates
-      if (Object.keys(rowMetadata).length > 0) {
-        metadata[row.filename] = rowMetadata;
+      // Handle wattage bulk edit - update photometric data
+      if (field === 'wattage') {
+        const newWattage = parseFloat(value);
+        if (!isNaN(newWattage) && newWattage > 0 && batchFiles[index] && row.originalWattage !== undefined) {
+          const result = photometricCalculator.scaleByWattage(
+            batchFiles[index].photometricData,
+            newWattage
+          );
+          
+          // Update batch file
+          const updatedFiles = [...batchFiles];
+          updatedFiles[index] = {
+            ...updatedFiles[index],
+            photometricData: result.scaledPhotometricData
+          };
+          addBatchFiles(updatedFiles);
+          
+          // Update lumens to reflect auto-adjusted value
+          updatedRow.lumens = result.scaledPhotometricData.totalLumens.toFixed(0);
+        }
       }
+      
+      // Handle lumens bulk edit - update photometric data
+      if (field === 'lumens') {
+        const newLumens = parseFloat(value);
+        if (!isNaN(newLumens) && newLumens > 0 && batchFiles[index] && row.originalLumens !== undefined) {
+          const result = photometricCalculator.scaleByLumens(
+            batchFiles[index].photometricData,
+            newLumens,
+            autoAdjustWattage
+          );
+          
+          // Update batch file
+          const updatedFiles = [...batchFiles];
+          updatedFiles[index] = {
+            ...updatedFiles[index],
+            photometricData: result.scaledPhotometricData
+          };
+          addBatchFiles(updatedFiles);
+          
+          // Update wattage if auto-adjust is enabled
+          if (autoAdjustWattage) {
+            updatedRow.wattage = result.scaledPhotometricData.inputWatts.toFixed(2);
+          }
+        }
+      }
+      
+      return updatedRow;
     });
-    setCSVMetadata(metadata);
+    
+    setCsvData(newCsvData);
+    updateMetadataFromCSV(newCsvData);
   };
 
   const showToastMessage = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
@@ -511,6 +745,37 @@ export function BatchMetadataEditorPage() {
             if (!isNaN(cct)) {
               updatedFile.metadata.colorTemperature = cct;
             }
+          }
+          
+          // Handle wattage and lumens changes
+          // Check if wattage changed from original
+          const newWattage = csvRow.wattage ? parseFloat(csvRow.wattage) : NaN;
+          const wattageChanged = !isNaN(newWattage) && csvRow.originalWattage !== undefined &&
+            Math.abs(newWattage - csvRow.originalWattage) > 0.01;
+          
+          // Check if lumens changed from original
+          const newLumens = csvRow.lumens ? parseFloat(csvRow.lumens) : NaN;
+          const lumensChanged = !isNaN(newLumens) && csvRow.originalLumens !== undefined &&
+            Math.abs(newLumens - csvRow.originalLumens) > 0.1;
+          
+          // Apply wattage change first (auto-adjusts lumens and candela)
+          if (wattageChanged) {
+            const result = photometricCalculator.scaleByWattage(
+              updatedFile.photometricData,
+              newWattage
+            );
+            updatedFile.photometricData = result.scaledPhotometricData;
+          }
+          
+          // Apply lumens change second (only if it was explicitly changed from original)
+          // This allows overriding the auto-adjusted lumens from wattage change
+          if (lumensChanged) {
+            const result = photometricCalculator.scaleByLumens(
+              updatedFile.photometricData,
+              newLumens,
+              autoAdjustWattage
+            );
+            updatedFile.photometricData = result.scaledPhotometricData;
           }
           
           // Convert dimensions based on row's unit
@@ -678,6 +943,10 @@ export function BatchMetadataEditorPage() {
       displayHeader = 'CCT (K)';
     } else if (header === 'nearField') {
       displayHeader = 'Near Field Type';
+    } else if (header === 'wattage') {
+      displayHeader = 'Wattage (W)';
+    } else if (header === 'lumens') {
+      displayHeader = 'Lumens (lm)';
     }
     return displayHeader;
   };
@@ -739,11 +1008,11 @@ export function BatchMetadataEditorPage() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Batch Metadata Editor</h1>
         <p className="text-gray-600 mt-1">
-          Update metadata for multiple IES files. Metadata values will be set as-is without any scaling.
+          Update metadata, wattage, lumens, and dimensions for multiple IES files with automatic photometric scaling.
         </p>
         <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-800">
-            <strong>Note:</strong> This page only edits metadata fields. Use separate pages for wattage or length edits which require photometric calculations.
+            <strong>How it works:</strong> Editing wattage auto-adjusts lumens and candela values. Editing lumens scales candela values. Enable "Auto-adjust wattage" to also scale wattage when editing lumens.
           </p>
         </div>
       </div>
@@ -799,7 +1068,51 @@ export function BatchMetadataEditorPage() {
         <div className="bg-white p-6 rounded-lg shadow-sm">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-gray-900">Metadata Editor</h2>
-            <p className="text-xs text-gray-500">Click column headers to set value for all rows</p>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <input
+                  type="checkbox"
+                  id="autoAdjustWattage"
+                  checked={autoAdjustWattage}
+                  onChange={(e) => {
+                    setAutoAdjustWattage(e.target.checked);
+                    // Re-apply lumens changes if any exist
+                    const updatedData = csvData.map((row, index) => {
+                      if (row.lumens && batchFiles[index] && row.originalLumens !== undefined) {
+                        const newLumens = parseFloat(row.lumens);
+                        if (!isNaN(newLumens) && newLumens > 0) {
+                          const result = photometricCalculator.scaleByLumens(
+                            batchFiles[index].photometricData,
+                            newLumens,
+                            e.target.checked
+                          );
+                          
+                          const updatedFiles = [...batchFiles];
+                          updatedFiles[index] = {
+                            ...updatedFiles[index],
+                            photometricData: result.scaledPhotometricData
+                          };
+                          addBatchFiles(updatedFiles);
+                          
+                          const updatedRow = { ...row };
+                          if (e.target.checked) {
+                            updatedRow.wattage = result.scaledPhotometricData.inputWatts.toFixed(2);
+                          }
+                          return updatedRow;
+                        }
+                      }
+                      return row;
+                    });
+                    setCsvData(updatedData);
+                  }}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="autoAdjustWattage" className="text-sm text-gray-700 cursor-pointer font-medium">
+                  Auto-adjust wattage when editing lumens
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">Click column headers to set value for all rows</p>
+            </div>
           </div>
           
           {csvErrors.length > 0 && (
@@ -843,8 +1156,15 @@ export function BatchMetadataEditorPage() {
                 {csvData.map((row, rowIndex) => (
                   <tr key={rowIndex}>
                     {csvHeaders.map((header) => {
+                      const isWattage = header === 'wattage';
+                      const isLumens = header === 'lumens';
+                      const wattageChanged = isWattage && row.originalWattage !== undefined && 
+                        Math.abs(parseFloat(row.wattage || '0') - row.originalWattage) > 0.01;
+                      const lumensChanged = isLumens && row.originalLumens !== undefined && 
+                        Math.abs(parseFloat(row.lumens || '0') - row.originalLumens) > 0.1;
+                      
                       return (
-                        <td key={header} className="px-4 py-2">
+                        <td key={header} className={`px-4 py-2 ${(wattageChanged || lumensChanged) ? 'bg-blue-50' : ''}`}>
                           {editingCell?.row === rowIndex && editingCell?.field === header ? (
                             header === 'nearField' ? (
                               <select
@@ -859,6 +1179,21 @@ export function BatchMetadataEditorPage() {
                                 <option value="2">2 - Linear</option>
                                 <option value="3">3 - Area</option>
                               </select>
+                            ) : isWattage || isLumens ? (
+                              <input
+                                type="number"
+                                step={isWattage ? "0.01" : "1"}
+                                value={row[header] || ''}
+                                onChange={(e) => updateCell(rowIndex, header, e.target.value)}
+                                onBlur={() => setEditingCell(null)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    setEditingCell(null);
+                                  }
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                autoFocus
+                              />
                             ) : (
                               <input
                                 type="text"
@@ -877,7 +1212,9 @@ export function BatchMetadataEditorPage() {
                           ) : (
                             <div
                               onClick={() => setEditingCell({row: rowIndex, field: header})}
-                              className="px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm"
+                              className={`px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm ${
+                                wattageChanged || lumensChanged ? 'font-medium text-blue-700' : ''
+                              }`}
                             >
                               {row[header] || '-'}
                             </div>
@@ -924,7 +1261,7 @@ export function BatchMetadataEditorPage() {
         onConfirm={applyCSVData}
         csvData={pendingCSVData}
         title="Preview CSV Data"
-        headers={csvHeaders}
+        headers={[...csvHeaders, 'update_file_name'] as (keyof CSVRow | 'update_file_name')[]}
       />
 
       <BulkEditColumnDialog

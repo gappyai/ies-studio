@@ -7,7 +7,7 @@ interface CSVPreviewDialogProps {
   onConfirm: () => void;
   csvData: CSVRow[];
   title: string;
-  headers: (keyof CSVRow)[];
+  headers: (keyof CSVRow | 'update_file_name')[];
 }
 
 export function CSVPreviewDialog({ 
@@ -64,7 +64,7 @@ export function CSVPreviewDialog({
                   <tr key={rowIndex} className="hover:bg-gray-50">
                     {headers.map((header) => (
                       <td key={header} className="px-4 py-2 text-sm text-gray-900 whitespace-nowrap">
-                        {row[header] || '-'}
+                        {header === 'update_file_name' ? ((row as any).update_file_name || '-') : (row[header] || '-')}
                       </td>
                     ))}
                   </tr>

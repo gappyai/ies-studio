@@ -81,7 +81,10 @@ export class CSVService {
       'unit': 'unit',
       'units': 'unit',
       'dimension unit': 'unit',
-      'dimension units': 'unit'
+      'dimension units': 'unit',
+      'update_file_name': 'update_file_name' as any,
+      'update filename': 'update_file_name' as any,
+      'updatefilename': 'update_file_name' as any
     };
 
     for (let i = 1; i < lines.length; i++) {
@@ -91,7 +94,11 @@ export class CSVService {
       headers.forEach((header, index) => {
         const mappedField = headerMap[header];
         if (mappedField && index < values.length) {
-          row[mappedField] = values[index].trim();
+          if ((mappedField as string) === 'update_file_name') {
+            (row as any).update_file_name = values[index].trim();
+          } else {
+            row[mappedField as keyof CSVRow] = values[index].trim();
+          }
         }
       });
 
