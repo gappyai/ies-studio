@@ -67,22 +67,23 @@ export function BatchMetadataEditorPage() {
   const metersToFeet = (meters: number) => meters * 3.28084;
   const feetToMeters = (feet: number) => feet / 3.28084;
 
-  // Helper function to merge metadata, only including non-empty values
+  // Helper function to merge metadata
+  // If a field is explicitly provided in updates (even if empty string), it overrides the original
+  // If a field is not provided in updates, the original value is preserved
   const mergeMetadata = (
     original: IESMetadata,
     updates: Partial<IESMetadata>
   ): IESMetadata => {
     const merged = { ...original };
     
-    // Only update fields that have non-empty values
+    // Update all fields that are explicitly provided in updates
     (Object.keys(updates) as Array<keyof IESMetadata>).forEach((key) => {
       const value = updates[key];
       
-      // For string fields, only update if value is non-empty
+      // For string fields, update if value is explicitly provided (even if empty)
+      // This allows CSV to clear fields by setting them to empty string
       if (typeof value === 'string') {
-        if (value.trim() !== '') {
-          (merged as any)[key] = value;
-        }
+        (merged as any)[key] = value; // Allow empty strings to override
       } 
       // For number fields, only update if value is defined and not NaN
       else if (typeof value === 'number') {
@@ -90,7 +91,7 @@ export function BatchMetadataEditorPage() {
           (merged as any)[key] = value;
         }
       }
-      // For other types, update if value is truthy
+      // For other types, update if value is explicitly provided
       else if (value !== undefined && value !== null) {
         (merged as any)[key] = value;
       }
@@ -322,41 +323,43 @@ export function BatchMetadataEditorPage() {
     
     const metadata: CSVMetadata = {};
     cleanedData.forEach(row => {
-      // Only include non-empty values in metadata
+      // Include all fields from CSV, even if empty (to allow clearing fields)
       const rowMetadata: Partial<IESMetadata> = {};
       
-      if (row.manufacturer && row.manufacturer.trim() !== '') {
+      // Include fields if they exist in the row (even if empty string)
+      // Use !== undefined to check if field was in CSV (even if empty string)
+      if (row.manufacturer !== undefined) {
         rowMetadata.manufacturer = row.manufacturer;
       }
-      if (row.luminaireCatalogNumber && row.luminaireCatalogNumber.trim() !== '') {
+      if (row.luminaireCatalogNumber !== undefined) {
         rowMetadata.luminaireCatalogNumber = row.luminaireCatalogNumber;
       }
-      if (row.lampCatalogNumber && row.lampCatalogNumber.trim() !== '') {
+      if (row.lampCatalogNumber !== undefined) {
         rowMetadata.lampCatalogNumber = row.lampCatalogNumber;
       }
-      if (row.test && row.test.trim() !== '') {
+      if (row.test !== undefined) {
         rowMetadata.test = row.test;
       }
-      if (row.testLab && row.testLab.trim() !== '') {
+      if (row.testLab !== undefined) {
         rowMetadata.testLab = row.testLab;
       }
-      if (row.testDate && row.testDate.trim() !== '') {
+      if (row.testDate !== undefined) {
         rowMetadata.testDate = row.testDate;
       }
-      if (row.issueDate && row.issueDate.trim() !== '') {
+      if (row.issueDate !== undefined) {
         rowMetadata.issueDate = row.issueDate;
       }
-      if (row.lampPosition && row.lampPosition.trim() !== '') {
+      if (row.lampPosition !== undefined) {
         rowMetadata.lampPosition = row.lampPosition;
       }
-      if (row.other && row.other.trim() !== '') {
+      if (row.other !== undefined) {
         rowMetadata.other = row.other;
       }
-      if (row.nearField && row.nearField.trim() !== '') {
+      if (row.nearField !== undefined) {
         rowMetadata.nearField = row.nearField;
       }
       
-      // Only add to metadata if there are actual updates
+      // Always add to metadata if there are any fields (even if empty)
       if (Object.keys(rowMetadata).length > 0) {
         metadata[row.filename] = rowMetadata;
       }
@@ -531,41 +534,45 @@ export function BatchMetadataEditorPage() {
   const updateMetadataFromCSV = (data: ExtendedCSVRow[]) => {
     const metadata: CSVMetadata = {};
     data.forEach(row => {
-      // Only include non-empty values in metadata
+      // Include all fields from CSV, even if empty (to allow clearing fields)
       const rowMetadata: Partial<IESMetadata> = {};
       
-      if (row.manufacturer && row.manufacturer.trim() !== '') {
+      // Include fields if they exist in the row (even if empty string)
+      // This allows CSV to explicitly set empty values to clear metadata
+      // Use !== undefined to check if field was in CSV (even if empty string)
+      if (row.manufacturer !== undefined) {
         rowMetadata.manufacturer = row.manufacturer;
       }
-      if (row.luminaireCatalogNumber && row.luminaireCatalogNumber.trim() !== '') {
+      if (row.luminaireCatalogNumber !== undefined) {
         rowMetadata.luminaireCatalogNumber = row.luminaireCatalogNumber;
       }
-      if (row.lampCatalogNumber && row.lampCatalogNumber.trim() !== '') {
+      if (row.lampCatalogNumber !== undefined) {
         rowMetadata.lampCatalogNumber = row.lampCatalogNumber;
       }
-      if (row.test && row.test.trim() !== '') {
+      if (row.test !== undefined) {
         rowMetadata.test = row.test;
       }
-      if (row.testLab && row.testLab.trim() !== '') {
+      if (row.testLab !== undefined) {
         rowMetadata.testLab = row.testLab;
       }
-      if (row.testDate && row.testDate.trim() !== '') {
+      if (row.testDate !== undefined) {
         rowMetadata.testDate = row.testDate;
       }
-      if (row.issueDate && row.issueDate.trim() !== '') {
+      if (row.issueDate !== undefined) {
         rowMetadata.issueDate = row.issueDate;
       }
-      if (row.lampPosition && row.lampPosition.trim() !== '') {
+      if (row.lampPosition !== undefined) {
         rowMetadata.lampPosition = row.lampPosition;
       }
-      if (row.other && row.other.trim() !== '') {
+      if (row.other !== undefined) {
         rowMetadata.other = row.other;
       }
-      if (row.nearField && row.nearField.trim() !== '') {
+      if (row.nearField !== undefined) {
         rowMetadata.nearField = row.nearField;
       }
       
-      // Only add to metadata if there are actual updates
+      // Always add to metadata if there are any fields (even if empty)
+      // This ensures CSV data is applied even when clearing fields
       if (Object.keys(rowMetadata).length > 0) {
         metadata[row.filename] = rowMetadata;
       }
@@ -721,32 +728,66 @@ export function BatchMetadataEditorPage() {
         const file = batchFiles[i];
         let updatedFile = { ...file };
         
-        // Safely merge metadata - preserve original, only update with non-empty values
-        updatedFile.metadata = mergeMetadata(
-          file.metadata,
-          {
-            ...(csvMetadata[file.fileName] || {}),
-            ...(file.metadataUpdates || {})
-          }
-        );
-
         // Match by index since files and csvData are in the same order
         // This works even if user has edited the filename in the table
         const csvRow = csvData[i];
         
-        // Handle nearField and CCT from CSV row if present
+        // Build metadata from CSV row (this is what's shown in the UI)
+        const csvRowMetadata: Partial<IESMetadata> = {};
         if (csvRow) {
-          if (csvRow.nearField && csvRow.nearField.trim() !== '') {
-            updatedFile.metadata.nearField = csvRow.nearField;
+          // Include all metadata fields from CSV row if they exist (even if empty)
+          if (csvRow.manufacturer !== undefined) {
+            csvRowMetadata.manufacturer = csvRow.manufacturer;
+          }
+          if (csvRow.luminaireCatalogNumber !== undefined) {
+            csvRowMetadata.luminaireCatalogNumber = csvRow.luminaireCatalogNumber;
+          }
+          if (csvRow.lampCatalogNumber !== undefined) {
+            csvRowMetadata.lampCatalogNumber = csvRow.lampCatalogNumber;
+          }
+          if (csvRow.test !== undefined) {
+            csvRowMetadata.test = csvRow.test;
+          }
+          if (csvRow.testLab !== undefined) {
+            csvRowMetadata.testLab = csvRow.testLab;
+          }
+          if (csvRow.testDate !== undefined) {
+            csvRowMetadata.testDate = csvRow.testDate;
+          }
+          if (csvRow.issueDate !== undefined) {
+            csvRowMetadata.issueDate = csvRow.issueDate;
+          }
+          if (csvRow.lampPosition !== undefined) {
+            csvRowMetadata.lampPosition = csvRow.lampPosition;
+          }
+          if (csvRow.other !== undefined) {
+            csvRowMetadata.other = csvRow.other;
+          }
+          if (csvRow.nearField !== undefined) {
+            csvRowMetadata.nearField = csvRow.nearField.trim();
           }
           
+          // Handle CCT - only set if it's a valid number
           if (csvRow.cct && csvRow.cct.trim() !== '') {
             const cct = parseFloat(csvRow.cct);
             if (!isNaN(cct)) {
-              updatedFile.metadata.colorTemperature = cct;
+              csvRowMetadata.colorTemperature = cct;
             }
           }
-          
+        }
+        
+        // Merge metadata: original -> csvMetadata (from store) -> csvRowMetadata (from UI) -> file.metadataUpdates
+        updatedFile.metadata = mergeMetadata(
+          file.metadata,
+          {
+            ...(csvMetadata[file.fileName] || {}),
+            ...csvRowMetadata, // This is the current state from UI, should override store
+            ...(file.metadataUpdates || {})
+          }
+        );
+        
+        // Handle wattage, lumens, and dimensions from CSV row if present
+        if (csvRow) {
           // Handle wattage and lumens changes
           // Check if wattage changed from original
           const newWattage = csvRow.wattage ? parseFloat(csvRow.wattage) : NaN;
