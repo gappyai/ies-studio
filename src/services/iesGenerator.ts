@@ -14,28 +14,65 @@ export class IESGenerator {
     // Add format line
     lines.push(file.metadata.format || 'IESNA:LM-63-2002');
     
-    // Add metadata keywords in proper LEDFLEX order
-    if (file.metadata.test) lines.push(`[TEST] ${file.metadata.test}`);
-    if (file.metadata.testLab) lines.push(`[TESTLAB] ${file.metadata.testLab}`);
-    if (file.metadata.testDate) lines.push(`[TESTDATE] ${file.metadata.testDate}`);
-    if (file.metadata.issueDate) lines.push(`[ISSUEDATE] ${file.metadata.issueDate}`);
-    if (file.metadata.lampPosition) lines.push(`[LAMPPOSITION] ${file.metadata.lampPosition}`);
-    if (file.metadata.other) lines.push(`[OTHER] ${file.metadata.other}`);
-    if (file.metadata.nearField) {
+    // Add metadata keywords in fixed order (matching IES file structure)
+    // Write fields if they are defined in metadata (even if empty string)
+    // This preserves empty fields from original file and allows CSV to clear fields
+    
+    // Standard metadata fields (always present, even if empty)
+    // These are standard IES fields that should always be written
+    lines.push(`[TEST] ${file.metadata.test !== undefined ? file.metadata.test : ''}`);
+    lines.push(`[TESTLAB] ${file.metadata.testLab !== undefined ? file.metadata.testLab : ''}`);
+    
+    // Conditional fields - write if defined (even if empty)
+    // This preserves empty fields from original and allows CSV to set empty values
+    if (file.metadata.testDate !== undefined) {
+      lines.push(`[TESTDATE] ${file.metadata.testDate}`);
+    }
+    if (file.metadata.issueDate !== undefined) {
+      lines.push(`[ISSUEDATE] ${file.metadata.issueDate}`);
+    }
+    if (file.metadata.lampPosition !== undefined) {
+      lines.push(`[LAMPPOSITION] ${file.metadata.lampPosition}`);
+    }
+    if (file.metadata.other !== undefined) {
+      lines.push(`[OTHER] ${file.metadata.other}`);
+    }
+    
+    // NearField (special handling - includes dimensions)
+    // Only write if nearField is defined and non-empty (empty means no near field)
+    if (file.metadata.nearField !== undefined && file.metadata.nearField !== '') {
       // Construct full NEARFIELD line using type and photometric dimensions
       const nearFieldLine = `[NEARFIELD] ${file.metadata.nearField} ${truncateToThreeDecimals(file.photometricData.length)} ${truncateToThreeDecimals(file.photometricData.width)} ${truncateToThreeDecimals(file.photometricData.height)}`;
       lines.push(nearFieldLine);
     }
-    if (file.metadata.manufacturer) lines.push(`[MANUFAC] ${file.metadata.manufacturer}`);
-    if (file.metadata.luminaireDescription) lines.push(`[LUMINAIRE] ${file.metadata.luminaireDescription}`);
-    if (file.metadata.lampCatalogNumber) lines.push(`[LAMPCAT] ${file.metadata.lampCatalogNumber}`);
-    if (file.metadata.luminaireCatalogNumber) lines.push(`[LUMCAT] ${file.metadata.luminaireCatalogNumber}`);
-    if (file.metadata.ballastCatalogNumber) lines.push(`[BALLASTCAT] ${file.metadata.ballastCatalogNumber}`);
-    if (file.metadata.ballastDescription) lines.push(`[BALLAST] ${file.metadata.ballastDescription}`);
     
-    // Add optional metadata (CCT and CRI)
-    if (file.metadata.colorTemperature) lines.push(`[_COLOR_TEMPERATURE] ${file.metadata.colorTemperature}K`);
-    if (file.metadata.colorRenderingIndex) lines.push(`[_CRI] ${file.metadata.colorRenderingIndex}`);
+    // Manufacturer (always present, even if empty)
+    lines.push(`[MANUFAC] ${file.metadata.manufacturer !== undefined ? file.metadata.manufacturer : ''}`);
+    
+    // Optional fields - write if defined (even if empty for catalog numbers)
+    if (file.metadata.luminaireDescription !== undefined && file.metadata.luminaireDescription !== '') {
+      lines.push(`[LUMINAIRE] ${file.metadata.luminaireDescription}`);
+    }
+    if (file.metadata.lampCatalogNumber !== undefined) {
+      lines.push(`[LAMPCAT] ${file.metadata.lampCatalogNumber}`);
+    }
+    if (file.metadata.luminaireCatalogNumber !== undefined) {
+      lines.push(`[LUMCAT] ${file.metadata.luminaireCatalogNumber}`);
+    }
+    if (file.metadata.ballastCatalogNumber !== undefined && file.metadata.ballastCatalogNumber !== '') {
+      lines.push(`[BALLASTCAT] ${file.metadata.ballastCatalogNumber}`);
+    }
+    if (file.metadata.ballastDescription !== undefined && file.metadata.ballastDescription !== '') {
+      lines.push(`[BALLAST] ${file.metadata.ballastDescription}`);
+    }
+    
+    // Add optional metadata (CCT and CRI) - only if they have values
+    if (file.metadata.colorTemperature !== undefined && file.metadata.colorTemperature !== null) {
+      lines.push(`[_COLOR_TEMPERATURE] ${file.metadata.colorTemperature}K`);
+    }
+    if (file.metadata.colorRenderingIndex !== undefined && file.metadata.colorRenderingIndex !== null) {
+      lines.push(`[_CRI] ${file.metadata.colorRenderingIndex}`);
+    }
     
     // Add TILT line
     lines.push('TILT=NONE');

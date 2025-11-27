@@ -77,17 +77,42 @@ export function BatchGeneratorPage() {
     }
   };
 
+  // Helper function to generate unique filename
+  const generateUniqueFilename = (baseFilename: string, existingVariants: CCTVariant[], excludeId?: string): string => {
+    const usedFilenames = new Set(
+      existingVariants
+        .filter(v => !excludeId || v.id !== excludeId)
+        .map(v => v.filename.toLowerCase())
+    );
+    
+    let candidate = baseFilename;
+    let counter = 1;
+    
+    while (usedFilenames.has(candidate.toLowerCase())) {
+      // Insert _N before .ies extension
+      const nameWithoutExt = baseFilename.replace(/\.(ies|IES)$/i, '');
+      const ext = baseFilename.match(/\.(ies|IES)$/i)?.[0] || '.ies';
+      candidate = `${nameWithoutExt}_${counter}${ext}`;
+      counter++;
+    }
+    
+    return candidate;
+  };
+
   const addVariant = (newVariants: Array<{ cct: number; multiplier: number }>) => {
     if (!currentFile) return;
     
     const baseName = currentFile.fileName.replace(/\.(ies|IES)$/i, '');
+    const updatedVariants = [...variants];
     
     const variantsToAdd: CCTVariant[] = newVariants.map((variant, index) => {
       const previewLumens = currentFile.photometricData.totalLumens * variant.multiplier;
+      const baseFilename = `${baseName}_${variant.cct}.ies`;
+      const uniqueFilename = generateUniqueFilename(baseFilename, updatedVariants);
       
       return {
         id: `${Date.now()}-${index}`,
-        filename: `${baseName}_${variant.cct}.ies`,
+        filename: uniqueFilename,
         cct: variant.cct,
         multiplier: variant.multiplier,
         previewLumens,
@@ -96,11 +121,13 @@ export function BatchGeneratorPage() {
       };
     });
     
-    setVariants([...variants, ...variantsToAdd]);
+    setVariants([...updatedVariants, ...variantsToAdd]);
   };
 
   const updateVariant = (id: string, field: 'filename' | 'cct' | 'multiplier' | 'catalogNumber', value: string) => {
     if (!currentFile) return;
+    
+    const baseName = currentFile.fileName.replace(/\.(ies|IES)$/i, '');
     
     setVariants(variants.map(variant => {
       if (variant.id !== id) return variant;
@@ -113,6 +140,11 @@ export function BatchGeneratorPage() {
         const cctValue = parseInt(value);
         if (!isNaN(cctValue) && cctValue > 0) {
           updated.cct = cctValue;
+          // If no catalog number, regenerate default filename with uniqueness
+          if (!updated.luminaireCatalogNumber || updated.luminaireCatalogNumber.trim() === '') {
+            const baseFilename = `${baseName}_${cctValue}.ies`;
+            updated.filename = generateUniqueFilename(baseFilename, variants, id);
+          }
         }
       } else if (field === 'multiplier') {
         const multiplierValue = parseFloat(value);
@@ -126,7 +158,12 @@ export function BatchGeneratorPage() {
         updated.luminaireCatalogNumber = value;
         // Auto-update filename if catalog number is provided
         if (value.trim() !== '') {
-          updated.filename = value.endsWith('.ies') ? value : `${value}.ies`;
+          const catalogFilename = value.endsWith('.ies') ? value : `${value}.ies`;
+          updated.filename = generateUniqueFilename(catalogFilename, variants, id);
+        } else {
+          // If catalog number is cleared, regenerate default filename
+          const baseFilename = `${baseName}_${updated.cct}.ies`;
+          updated.filename = generateUniqueFilename(baseFilename, variants, id);
         }
       }
       
@@ -149,6 +186,7 @@ export function BatchGeneratorPage() {
         : currentFile;
       
       const zip = new JSZip();
+      const usedFilenames = new Set<string>();
       
       for (const variant of variants) {
         let variantPhotometricData = { ...workingFile.photometricData };
@@ -159,10 +197,21 @@ export function BatchGeneratorPage() {
           variantPhotometricData = scaled.scaledPhotometricData;
         }
         
+        // Ensure unique filename in zip (safety check in case user manually edited to duplicate)
+        let zipFilename = variant.filename;
+        let counter = 1;
+        while (usedFilenames.has(zipFilename.toLowerCase())) {
+          const nameWithoutExt = variant.filename.replace(/\.(ies|IES)$/i, '');
+          const ext = variant.filename.match(/\.(ies|IES)$/i)?.[0] || '.ies';
+          zipFilename = `${nameWithoutExt}_${counter}${ext}`;
+          counter++;
+        }
+        usedFilenames.add(zipFilename.toLowerCase());
+        
         // Create variant file with updated photometric data
         const variantFile = {
           ...workingFile,
-          fileName: variant.filename,
+          fileName: zipFilename,
           photometricData: variantPhotometricData,
           metadata: {
             ...workingFile.metadata,
@@ -173,7 +222,7 @@ export function BatchGeneratorPage() {
         };
         
         const content = iesGenerator.generate(variantFile);
-        zip.file(variant.filename, content);
+        zip.file(zipFilename, content);
       }
       
       const blob = await zip.generateAsync({ type: 'blob' });
@@ -317,12 +366,9 @@ export function BatchGeneratorPage() {
     const baseName = currentFile.fileName.replace(/\.(ies|IES)$/i, '');
     const updatedVariants = [...variants];
 
-    pendingCSVData.forEach((csvRow) => {
+    pendingCSVData.forEach((csvRow, index) => {
       const cct = parseFloat(csvRow.cct || '0');
       if (isNaN(cct) || cct <= 0) return;
-
-      // Check if variant with same CCT already exists
-      const existingIndex = updatedVariants.findIndex(v => v.cct === cct);
       
       // Get multiplier from CSV (csvService maps 'multiplier' column to 'cctMultiplier')
       const multiplierStr = csvRow.cctMultiplier || '1.0';
@@ -342,12 +388,18 @@ export function BatchGeneratorPage() {
           ? luminaireCatalogNumber 
           : `${luminaireCatalogNumber}.ies`;
       }
+      
+      // For default filenames (no CSV filename and no catalog number), ensure uniqueness
       if (!filename) {
-        filename = `${baseName}_${cct}.ies`;
+        const baseFilename = `${baseName}_${cct}.ies`;
+        filename = generateUniqueFilename(baseFilename, updatedVariants);
+      } else {
+        // Even if filename is provided, ensure it's unique
+        filename = generateUniqueFilename(filename, updatedVariants);
       }
 
       const variantData: CCTVariant = {
-        id: existingIndex >= 0 ? updatedVariants[existingIndex].id : `${Date.now()}-${cct}`,
+        id: `${Date.now()}-${index}-${cct}`,
         filename,
         cct,
         multiplier,
@@ -356,13 +408,8 @@ export function BatchGeneratorPage() {
         luminaireCatalogNumber
       };
 
-      if (existingIndex >= 0) {
-        // Update existing variant
-        updatedVariants[existingIndex] = variantData;
-      } else {
-        // Add new variant
-        updatedVariants.push(variantData);
-      }
+      // Always add new variant (allow duplicate CCTs)
+      updatedVariants.push(variantData);
     });
 
     setVariants(updatedVariants);
