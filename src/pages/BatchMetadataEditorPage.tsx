@@ -231,9 +231,10 @@ export function BatchMetadataEditorPage() {
         const newWattage = field === 'wattage' ? parseFloat(value) : undefined;
         const newLumens = field === 'lumens' ? parseFloat(value) : undefined;
         
-        // Get current values
-        const currentWattage = field === 'wattage' ? newWattage : (row.wattage ? parseFloat(row.wattage) : undefined);
-        const currentLumens = field === 'lumens' ? newLumens : (row.lumens ? parseFloat(row.lumens) : undefined);
+        // Get current values - pass undefined for the field not being edited
+        // to allow natural scaling (e.g. changing wattage auto-updates lumens)
+        const currentWattage = field === 'wattage' ? newWattage : undefined;
+        const currentLumens = field === 'lumens' ? newLumens : undefined;
         
         // Apply unified photometric updates
         const updatedData = applyPhotometricUpdates(batchFile.photometricData, {
@@ -302,21 +303,8 @@ export function BatchMetadataEditorPage() {
           }
         );
         
-        // Handle wattage, lumens, and dimensions from CSV row if present
+        // Handle dimensions from CSV row if present (wattage and lumens are already handled in batchFiles)
         if (csvRow) {
-          // Apply unified photometric updates
-          const csvWattage = csvRow.wattage ? parseFloat(csvRow.wattage) : undefined;
-          const csvLumens = csvRow.lumens ? parseFloat(csvRow.lumens) : undefined;
-          
-          updatedFile.photometricData = applyPhotometricUpdates(file.photometricData, {
-            fileId: file.id,
-            originalWattage: csvRow.originalWattage,
-            originalLumens: csvRow.originalLumens,
-            newWattage: csvWattage,
-            newLumens: csvLumens,
-            autoAdjustWattage
-          });
-          
           // Convert dimensions based on row's unit
           const targetUnit = updatedFile.photometricData.unitsType === 1 ? 'feet' : 'meters';
           const needsConversion = csvRow.unit !== targetUnit;
