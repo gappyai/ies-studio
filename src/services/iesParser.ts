@@ -105,8 +105,8 @@ export class IESParser {
       numberOfHorizontalAngles,
       photometricType,
       unitsType,
-      length,
       width,
+      length,
       height,
     ] = dataLine;
 

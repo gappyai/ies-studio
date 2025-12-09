@@ -82,7 +82,7 @@ export class IESGenerator {
     lines.push(
       `${data.numberOfLamps} ${truncateToThreeDecimals(data.lumensPerLamp)} ${data.multiplier} ` +
       `${data.numberOfVerticalAngles} ${data.numberOfHorizontalAngles} ` +
-      `${data.photometricType} ${data.unitsType} ${truncateToThreeDecimals(data.length)} ${truncateToThreeDecimals(data.width)} ${truncateToThreeDecimals(data.height)}`
+      `${data.photometricType} ${data.unitsType} ${truncateToThreeDecimals(data.width)} ${truncateToThreeDecimals(data.length)} ${truncateToThreeDecimals(data.height)}`
     );
     
     // Add ballast and input watts line
