@@ -96,10 +96,12 @@ export class IESFile {
     if (hasChanged(currentData.length, length)) {
         const result = photometricCalculator.scaleByDimension(currentData, length!, 'length');
         currentData = result.scaledPhotometricData;
-    } else if (hasChanged(currentData.width, width)) {
+    } 
+    if (hasChanged(currentData.width, width)) {
         const result = photometricCalculator.scaleByDimension(currentData, width!, 'width');
         currentData = result.scaledPhotometricData;
-    } else if (hasChanged(currentData.height, height)) {
+    } 
+    if (hasChanged(currentData.height, height)) {
         const result = photometricCalculator.scaleByDimension(currentData, height!, 'height');
         currentData = result.scaledPhotometricData;
     }
