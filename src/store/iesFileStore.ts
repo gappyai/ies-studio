@@ -1,17 +1,15 @@
 import { create } from 'zustand';
-import type { IESFile, IESMetadata, PhotometricData, CalculatedProperties, ViewMode } from '../types/ies.types';
+import type { IESFileData, IESMetadata, PhotometricData, CalculatedProperties, ViewMode } from '../types/ies.types';
 
-export interface BatchFile extends IESFile {
+export interface BatchFile extends IESFileData {
   id: string;
   metadataUpdates?: Partial<IESMetadata>;
 }
 
-export interface CSVMetadata {
-  [filename: string]: Partial<IESMetadata>;
-}
+// Removed CSVMetadata interface
 
 interface IESFileStore {
-  currentFile: IESFile | null;
+  currentFile: IESFileData | null;
   editedData: Partial<IESMetadata>;
   editedPhotometricData: Partial<PhotometricData>;
   calculatedProperties: CalculatedProperties | null;
@@ -19,11 +17,10 @@ interface IESFileStore {
   viewMode: ViewMode;
   // Batch operations
   batchFiles: BatchFile[];
-  csvMetadata: CSVMetadata;
   currentView: 'overview' | 'edit';
   
   // Actions
-  setCurrentFile: (file: IESFile) => void;
+  setCurrentFile: (file: IESFileData) => void;
   updateMetadata: (key: keyof IESMetadata, value: any) => void;
   updatePhotometricData: (key: keyof PhotometricData, value: any) => void;
   applyEdits: () => void;
@@ -34,7 +31,6 @@ interface IESFileStore {
   // Batch operations
   addBatchFiles: (files: BatchFile[]) => void;
   clearBatchFiles: () => void;
-  setCSVMetadata: (metadata: CSVMetadata) => void;
   updateBatchFileMetadata: (fileId: string, metadata: Partial<IESMetadata>) => void;
   setCurrentView: (view: 'overview' | 'edit') => void;
 }
@@ -47,7 +43,6 @@ export const useIESFileStore = create<IESFileStore>((set) => ({
   isDirty: false,
   viewMode: 'overview',
   batchFiles: [],
-  csvMetadata: {},
   currentView: 'overview',
   
   setCurrentFile: (file) => set({
@@ -130,9 +125,7 @@ export const useIESFileStore = create<IESFileStore>((set) => ({
   // Batch operations
   addBatchFiles: (files) => set({ batchFiles: files }),
   
-  clearBatchFiles: () => set({ batchFiles: [], csvMetadata: {} }),
-  
-  setCSVMetadata: (metadata) => set({ csvMetadata: metadata }),
+  clearBatchFiles: () => set({ batchFiles: [] }),
   
   updateBatchFileMetadata: (fileId, metadata) => set((state) => ({
     batchFiles: state.batchFiles.map(file =>

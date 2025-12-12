@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { Download, Upload, Plus, Trash2 } from 'lucide-react';
 import { useIESFileStore } from '../store/iesFileStore';
-import { iesGenerator } from '../services/iesGenerator';
-import { iesParser } from '../services/iesParser';
 import { photometricCalculator } from '../services/calculator';
 import { csvService, type CSVRow } from '../services/csvService';
+import { IESFile } from '../models/IESFile';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { BatchActionBar } from '../components/common/BatchActionBar';
@@ -45,10 +44,11 @@ export function BatchGeneratorPage() {
     try {
       setProcessing(true);
       const content = await file.text();
-      const parsedFile = iesParser.parse(content, file.name, file.size);
-      const calculated = photometricCalculator.calculateProperties(parsedFile.photometricData);
+      const iesFile = IESFile.parse(content, file.name);
       
-      setCurrentFile(parsedFile);
+      const calculated = photometricCalculator.calculateProperties(iesFile.photometricData);
+      
+      setCurrentFile(iesFile.data);
       setCalculatedProperties(calculated);
       
       // Start with empty variants table
@@ -189,12 +189,12 @@ export function BatchGeneratorPage() {
       const usedFilenames = new Set<string>();
       
       for (const variant of variants) {
-        let variantPhotometricData = { ...workingFile.photometricData };
+        // Create a new IESFile instance from the working file
+        const variantFile = new IESFile(JSON.parse(JSON.stringify(workingFile)));
         
-        // Apply CCT multiplier
+        // Apply CCT multiplier logic via IESFile
         if (variant.multiplier !== 1.0) {
-          const scaled = photometricCalculator.scaleByCCT(variantPhotometricData, variant.multiplier);
-          variantPhotometricData = scaled.scaledPhotometricData;
+            variantFile.scaleByCCT(variant.multiplier);
         }
         
         // Ensure unique filename in zip (safety check in case user manually edited to duplicate)
@@ -208,20 +208,15 @@ export function BatchGeneratorPage() {
         }
         usedFilenames.add(zipFilename.toLowerCase());
         
-        // Create variant file with updated photometric data
-        const variantFile = {
-          ...workingFile,
-          fileName: zipFilename,
-          photometricData: variantPhotometricData,
-          metadata: {
-            ...workingFile.metadata,
+        // Update metadata
+        variantFile.updateMetadata({
             colorTemperature: variant.cct,
             lampCatalogNumber: variant.lampCatalogNumber || workingFile.metadata.lampCatalogNumber,
             luminaireCatalogNumber: variant.luminaireCatalogNumber || workingFile.metadata.luminaireCatalogNumber
-          }
-        };
+        });
         
-        const content = iesGenerator.generate(variantFile);
+        // Write content
+        const content = variantFile.write();
         zip.file(zipFilename, content);
       }
       

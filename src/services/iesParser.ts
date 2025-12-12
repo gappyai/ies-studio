@@ -1,7 +1,7 @@
-import type { IESFile, IESMetadata, PhotometricData } from '../types/ies.types';
+import type { IESFileData, IESMetadata, PhotometricData } from '../types/ies.types';
 
 export class IESParser {
-  parse(fileContent: string, fileName: string, fileSize: number): IESFile {
+  parse(fileContent: string, fileName: string, fileSize: number): IESFileData {
     try {
       const lines = fileContent.split('\n').map(line => line.trim());
       

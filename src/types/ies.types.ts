@@ -1,4 +1,4 @@
-export interface IESFile {
+export interface IESFileData {
   metadata: IESMetadata;
   photometricData: PhotometricData;
   rawContent: string;

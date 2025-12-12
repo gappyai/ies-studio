@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import { Upload, Download } from 'lucide-react';
 import { useIESFileStore, type BatchFile } from '../store/iesFileStore';
-import { iesParser } from '../services/iesParser';
-import { iesGenerator } from '../services/iesGenerator';
-import { photometricCalculator } from '../services/calculator';
 import { csvService, type CSVRow } from '../services/csvService';
+import { IESFile } from '../models/IESFile';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { BatchActionBar } from '../components/common/BatchActionBar';
@@ -43,19 +41,19 @@ export function BatchWattageEditorPage() {
         if (!file.name.toLowerCase().endsWith('.ies')) continue;
 
         const content = await file.text();
-        const parsedFile = iesParser.parse(content, file.name, file.size);
+        const iesFile = IESFile.parse(content, file.name);
         
         const batchFile: BatchFile = {
-          ...parsedFile,
+          ...iesFile.data,
           id: `${file.name}-${Date.now()}-${i}`,
           metadataUpdates: {}
         };
 
         newBatchFiles.push(batchFile);
 
-        const originalWattage = parsedFile.photometricData.inputWatts;
-        const originalLumens = parsedFile.photometricData.totalLumens;
-        const efficacy = photometricCalculator.calculateEfficacy(originalLumens, originalWattage);
+        const originalWattage = iesFile.photometricData.inputWatts;
+        const originalLumens = iesFile.photometricData.totalLumens;
+        const efficacy = originalWattage > 0 ? originalLumens / originalWattage : 0;
 
         newWattageData.push({
           filename: file.name,
@@ -81,7 +79,6 @@ export function BatchWattageEditorPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Reset input so the same file can be selected again
     event.target.value = '';
 
     const reader = new FileReader();
@@ -103,42 +100,70 @@ export function BatchWattageEditorPage() {
     reader.readAsText(file);
   };
 
+  const calculatePreview = (file: BatchFile, newWattageVal: string): { previewLumens: number, previewWattage: number, previewEfficacy: number } => {
+      const newWattage = parseFloat(newWattageVal);
+      if (isNaN(newWattage) || newWattage <= 0) {
+          return {
+              previewWattage: file.photometricData.inputWatts,
+              previewLumens: file.photometricData.totalLumens,
+              previewEfficacy: file.photometricData.inputWatts > 0 ? file.photometricData.totalLumens / file.photometricData.inputWatts : 0
+          };
+      }
+
+      const iesFile = new IESFile(JSON.parse(JSON.stringify(file)));
+      iesFile.updateWattage(newWattage, true);
+      
+      const p = iesFile.photometricData;
+      return {
+          previewWattage: p.inputWatts,
+          previewLumens: p.totalLumens,
+          previewEfficacy: p.inputWatts > 0 ? p.totalLumens / p.inputWatts : 0
+      };
+  };
+
   const applyCSVData = () => {
     const updatedData = pendingCSVData.map(newRow => {
-      const existingRow = wattageData.find(r => r.filename === newRow.filename);
-      if (!existingRow) return null;
+      const rowIndex = wattageData.findIndex(r => r.filename === newRow.filename);
+      if (rowIndex === -1) return null;
+      
+      const existingRow = wattageData[rowIndex];
+      const batchFile = batchFiles[rowIndex];
+      if (!batchFile) return null;
 
       const wattageValue = newRow.wattage || '';
       const newWattage = wattageValue.trim() !== '' ? wattageValue : existingRow.newWattage;
 
-      return updateWattagePreview(existingRow, newWattage);
+      const preview = calculatePreview(batchFile, newWattage);
+
+      return {
+          ...existingRow,
+          newWattage,
+          ...preview
+      };
     }).filter((row): row is WattageRow => row !== null);
     
-    setWattageData(updatedData);
+    // Merge updates
+    const newWattageData = [...wattageData];
+    updatedData.forEach(row => {
+        const index = newWattageData.findIndex(r => r.filename === row.filename);
+        if (index !== -1) newWattageData[index] = row;
+    });
+    
+    setWattageData(newWattageData);
     setPendingCSVData([]);
   };
 
-  const updateWattagePreview = (row: WattageRow, newWattage: string): WattageRow => {
-    const wattage = parseFloat(newWattage);
-    if (isNaN(wattage) || wattage <= 0) {
-      return { ...row, newWattage, previewWattage: row.originalWattage };
-    }
-
-    const originalEfficacy = row.originalLumens / row.originalWattage;
-    const previewLumens = wattage * originalEfficacy;
-
-    return {
-      ...row,
-      newWattage,
-      previewWattage: wattage,
-      previewLumens,
-      previewEfficacy: originalEfficacy
-    };
-  };
-
   const updateWattage = (rowIndex: number, value: string) => {
+    const batchFile = batchFiles[rowIndex];
+    if (!batchFile) return;
+
+    const preview = calculatePreview(batchFile, value);
     const newData = [...wattageData];
-    newData[rowIndex] = updateWattagePreview(newData[rowIndex], value);
+    newData[rowIndex] = {
+        ...newData[rowIndex],
+        newWattage: value,
+        ...preview
+    };
     setWattageData(newData);
   };
 
@@ -161,24 +186,19 @@ export function BatchWattageEditorPage() {
     try {
       const zip = new JSZip();
 
-      for (const file of batchFiles) {
-        const wattageRow = wattageData.find(row => row.filename === file.fileName);
+      for (let i = 0; i < batchFiles.length; i++) {
+        const file = batchFiles[i];
+        const wattageRow = wattageData[i];
         if (!wattageRow) continue;
 
-        let updatedFile = { ...file };
-        
         const newWattage = parseFloat(wattageRow.newWattage);
-        const wattageChanged = !isNaN(newWattage) && Math.abs(newWattage - file.photometricData.inputWatts) > 0.01;
-
-        if (wattageChanged) {
-          const result = photometricCalculator.scaleByWattage(
-            updatedFile.photometricData,
-            newWattage
-          );
-          updatedFile.photometricData = result.scaledPhotometricData;
+        const iesFile = new IESFile(JSON.parse(JSON.stringify(file)));
+        
+        if (!isNaN(newWattage) && newWattage > 0) {
+            iesFile.updateWattage(newWattage, true);
         }
 
-        const iesContent = iesGenerator.generate(updatedFile);
+        const iesContent = iesFile.write();
         zip.file(file.fileName, iesContent);
       }
 

@@ -1,4 +1,4 @@
-import type { IESFile } from '../types/ies.types';
+import type { IESFileData } from '../types/ies.types';
 
 /**
  * Helper function to truncate numbers to 3 decimal places
@@ -8,7 +8,7 @@ function truncateToThreeDecimals(value: number): number {
 }
 
 export class IESGenerator {
-  generate(file: IESFile): string {
+  generate(file: IESFileData): string {
     const lines: string[] = [];
     
     // Add format line
@@ -103,13 +103,13 @@ export class IESGenerator {
   }
   
   generateVariant(
-    baseFile: IESFile,
+    baseFile: IESFileData,
     targetLumens: number,
     dimensions?: { length?: number; width?: number; height?: number },
     newName?: string,
     colorTemperature?: number
-  ): IESFile {
-    const variant: IESFile = JSON.parse(JSON.stringify(baseFile));
+  ): IESFileData {
+    const variant: IESFileData = JSON.parse(JSON.stringify(baseFile));
     
     // Scale lumen values
     const ratio = truncateToThreeDecimals(targetLumens / baseFile.photometricData.totalLumens);

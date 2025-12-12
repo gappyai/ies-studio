@@ -19,6 +19,7 @@ export interface CSVRow {
   width?: string;
   height?: string;
   unit?: string; // 'meters' or 'feet'
+  update_file_name?: string;
 }
 
 export class CSVService {
@@ -82,9 +83,9 @@ export class CSVService {
       'units': 'unit',
       'dimension unit': 'unit',
       'dimension units': 'unit',
-      'update_file_name': 'update_file_name' as any,
-      'update filename': 'update_file_name' as any,
-      'updatefilename': 'update_file_name' as any
+      'update_file_name': 'update_file_name',
+      'update filename': 'update_file_name',
+      'updatefilename': 'update_file_name'
     };
 
     for (let i = 1; i < lines.length; i++) {
@@ -94,8 +95,8 @@ export class CSVService {
       headers.forEach((header, index) => {
         const mappedField = headerMap[header];
         if (mappedField && index < values.length) {
-          if ((mappedField as string) === 'update_file_name') {
-            (row as any).update_file_name = values[index].trim();
+          if (mappedField === 'update_file_name') {
+            row.update_file_name = values[index].trim();
           } else {
             row[mappedField as keyof CSVRow] = values[index].trim();
           }
@@ -146,7 +147,7 @@ export class CSVService {
    */
   exportCSV(rows: CSVRow[], includePhotometric: boolean = false): string {
     const headers = includePhotometric
-      ? ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField', 'cct', 'length', 'width', 'height', 'unit']
+      ? ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField', 'cct', 'wattage', 'lumens', 'length', 'width', 'height', 'unit', 'update_file_name']
       : ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField'];
     
     // Create display headers
@@ -254,7 +255,7 @@ export class CSVService {
   /**
    * Validate CSV data
    */
-  validateCSV(rows: CSVRow[]): { isValid: boolean; errors: string[] } {
+  validateCSV(rows: CSVRow[], existingFilenames?: string[]): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
 
     if (rows.length === 0) {
@@ -266,6 +267,9 @@ export class CSVService {
     rows.forEach((row, index) => {
       if (!row.filename) {
         errors.push(`Row ${index + 1}: Missing filename`);
+      } else if (existingFilenames && !existingFilenames.includes(row.filename)) {
+          // Check if filename matches any existing file
+          errors.push(`Row ${index + 1}: Filename "${row.filename}" not found in loaded files`);
       }
     });
 
@@ -276,7 +280,7 @@ export class CSVService {
     );
     
     if (duplicates.length > 0) {
-      errors.push(`Duplicate filenames found: ${[...new Set(duplicates)].join(', ')}`);
+      errors.push(`Duplicate filenames found in CSV: ${[...new Set(duplicates)].join(', ')}`);
     }
 
     return {
