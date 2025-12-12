@@ -27,8 +27,8 @@ export class CSVHandler {
   /**
    * Validate CSV data
    */
-  validate(rows: CSVRow[]): { isValid: boolean; errors: string[] } {
-    return csvService.validateCSV(rows);
+  validate(rows: CSVRow[], existingFilenames?: string[]): { isValid: boolean; errors: string[] } {
+    return csvService.validateCSV(rows, existingFilenames);
   }
 
   /**

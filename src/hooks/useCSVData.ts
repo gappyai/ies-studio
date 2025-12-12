@@ -133,7 +133,10 @@ export function useCSVData() {
   
   const parseCSVFile = (csvContent: string): { data: CSVRow[]; errors: string[] } => {
     const parsedData = csvHandler.parse(csvContent);
-    const validation = csvHandler.validate(parsedData);
+    const currentBatchFiles = getStoreState().batchFiles;
+    const existingFilenames = currentBatchFiles.map(f => f.fileName);
+
+    const validation = csvHandler.validate(parsedData, existingFilenames);
     
     if (!validation.isValid) {
       return { data: [], errors: validation.errors };
@@ -150,12 +153,9 @@ export function useCSVData() {
     // This function matches CSV rows to existing files and updates them.
     // Use getState() to get the LATEST batchFiles to avoid stale closure issues
     const currentBatchFiles = getStoreState().batchFiles;
-    const updatedFiles = currentBatchFiles.map((file, index) => {
+    const updatedFiles = currentBatchFiles.map((file) => {
       // Find matching row by filename (original filename in file object)
-      // Note: CSV import logic in original code matched by 'filename' column or index
-      // Here we try to match by filename or index fallback
-      
-      const csvRow = newCSVData.find(r => r.filename === file.fileName) || newCSVData[index];
+      const csvRow = newCSVData.find(r => r.filename === file.fileName);
       if (!csvRow) return file;
       
       const fileClone: BatchFile = JSON.parse(JSON.stringify(file));
@@ -163,11 +163,21 @@ export function useCSVData() {
       
       csvHandler.applyRow(iesFile, csvRow, autoAdjustWattage);
       
-      // Update filename if provided in update_file_name (handled in original code?)
-      if ((csvRow as any).update_file_name && (csvRow as any).update_file_name.trim() !== '') {
-          let newName = (csvRow as any).update_file_name.trim();
+      // Update filename if provided in update_file_name
+      if (csvRow.update_file_name && csvRow.update_file_name.trim() !== '') {
+          let newName = csvRow.update_file_name.trim();
           if (!newName.toLowerCase().endsWith('.ies')) newName += '.ies';
-          iesFile.fileName = newName;
+          
+          // Check for filename collision in the current batch (excluding self)
+          const isCollision = currentBatchFiles.some(f => f.fileName === newName && f.id !== file.id);
+           // Also check if collision with other pending updates in this CSV batch?
+           // That's harder. But simpler check against current state is good start.
+           
+          if (!isCollision) {
+             iesFile.fileName = newName;
+          } else {
+             console.warn(`Skipping filename update for ${file.fileName} to ${newName} due to collision.`);
+          }
       }
       
       return fileClone;
@@ -176,8 +186,8 @@ export function useCSVData() {
     // Also update rowStates for unit preferences if CSV specifies unit
     setRowStates(prev => {
         const updatedRowStates = { ...prev };
-        updatedFiles.forEach((file, index) => {
-            const csvRow = newCSVData.find(r => r.filename === file.fileName) || newCSVData[index];
+        updatedFiles.forEach((file) => {
+            const csvRow = newCSVData.find(r => r.filename === file.fileName);
             if (csvRow && csvRow.unit) {
                 const u = csvRow.unit.toLowerCase().trim();
                 if (u === 'feet' || u === 'ft') updatedRowStates[file.id] = { ...(updatedRowStates[file.id] || { inputOverrides: {} }), unit: 'feet' };
