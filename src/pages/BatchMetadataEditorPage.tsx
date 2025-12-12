@@ -71,6 +71,7 @@ export function BatchMetadataEditorPage() {
     if (!files || files.length === 0) return;
 
     setProcessing(true);
+    setCsvErrors([]); // Clear any previous CSV errors when adding new files
     try {
       const fileArray = Array.from(files);
       await loadIESFiles(fileArray);
@@ -86,6 +87,7 @@ export function BatchMetadataEditorPage() {
     if (!file) return;
 
     // Reset input so the same file can be selected again
+    // We store the file reference before resetting
     event.target.value = '';
 
     const reader = new FileReader();
@@ -128,6 +130,7 @@ export function BatchMetadataEditorPage() {
 
   const clearAll = () => {
     clearBatchFiles();
+    setCsvErrors([]);
   };
 
   const showToastMessage = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
