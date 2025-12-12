@@ -140,6 +140,11 @@ export class IESFile {
     // Note: This does NOT scale candela/lumens/watts, just converts the dimension numbers.
   }
 
+  scaleByCCT(multiplier: number): void {
+    const result = photometricCalculator.scaleByCCT(this._data.photometricData, multiplier);
+    this._data.photometricData = result.scaledPhotometricData;
+  }
+
   write(): string {
     return iesGenerator.generate(this._data);
   }

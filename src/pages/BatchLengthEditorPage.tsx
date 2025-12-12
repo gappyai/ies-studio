@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import { Upload, Download, Info } from 'lucide-react';
 import { useIESFileStore, type BatchFile } from '../store/iesFileStore';
-import { iesParser } from '../services/iesParser';
-import { iesGenerator } from '../services/iesGenerator';
-import { photometricCalculator } from '../services/calculator';
 import { type CSVRow } from '../services/csvService';
+import { IESFile } from '../models/IESFile';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { BatchActionBar } from '../components/common/BatchActionBar';
@@ -41,20 +39,18 @@ export function BatchLengthEditorPage() {
   const feetToMeters = (feet: number) => feet / 3.28084;
 
   const handleUnitToggle = () => {
-    const newUnitsType = useImperial ? 2 : 1;
+    const targetUnit = useImperial ? 'meters' : 'feet';
     const convertFunc = useImperial ? feetToMeters : metersToFeet;
     
-    const updatedFiles = batchFiles.map(file => ({
-      ...file,
-      photometricData: {
-        ...file.photometricData,
-        unitsType: newUnitsType,
-        width: convertFunc(file.photometricData.width),
-        length: convertFunc(file.photometricData.length),
-        height: convertFunc(file.photometricData.height)
-      }
-    }));
+    // Update batch files using IESFile logic
+    const updatedFiles = batchFiles.map(file => {
+      const fileClone = JSON.parse(JSON.stringify(file));
+      const iesFile = new IESFile(fileClone);
+      iesFile.convertUnits(targetUnit);
+      return fileClone;
+    });
     
+    // Update UI state
     const updatedLengthData = lengthData.map(row => ({
       ...row,
       originalLength: convertFunc(row.originalLength),
@@ -84,19 +80,19 @@ export function BatchLengthEditorPage() {
         if (!file.name.toLowerCase().endsWith('.ies')) continue;
 
         const content = await file.text();
-        const parsedFile = iesParser.parse(content, file.name, file.size);
+        const iesFile = IESFile.parse(content, file.name);
         
         const batchFile: BatchFile = {
-          ...parsedFile,
+          ...iesFile.data,
           id: `${file.name}-${Date.now()}-${i}`,
           metadataUpdates: {}
         };
 
         newBatchFiles.push(batchFile);
 
-        const originalLength = parsedFile.photometricData.length;
-        const originalWidth = parsedFile.photometricData.width;
-        const originalHeight = parsedFile.photometricData.height;
+        const originalLength = iesFile.photometricData.length;
+        const originalWidth = iesFile.photometricData.width;
+        const originalHeight = iesFile.photometricData.height;
         const scalingDimension = 'length';
 
         const scalingDimensionValue = originalLength;
@@ -112,8 +108,8 @@ export function BatchLengthEditorPage() {
           previewLength: originalLength,
           previewWidth: originalWidth,
           previewHeight: originalHeight,
-          previewWattage: parsedFile.photometricData.inputWatts,
-          previewLumens: parsedFile.photometricData.totalLumens
+          previewWattage: iesFile.photometricData.inputWatts,
+          previewLumens: iesFile.photometricData.totalLumens
         });
       }
 
@@ -126,43 +122,41 @@ export function BatchLengthEditorPage() {
     }
   };
 
-  const updateLengthPreview = (
-    row: LengthRow, 
-    targetLength: string,
-    photometricData: any
-  ): LengthRow => {
-    const newLength = parseFloat(targetLength);
-    if (isNaN(newLength) || newLength <= 0) {
-      return { ...row, targetLength };
-    }
+  const calculatePreview = (file: BatchFile, row: LengthRow, targetLengthVal: string): Partial<LengthRow> => {
+      const newLength = parseFloat(targetLengthVal);
+      if (isNaN(newLength) || newLength <= 0) {
+          return { targetLength: targetLengthVal };
+      }
 
-    const scalingDimension = row.scalingDimension;
-    const originalScalingValue = scalingDimension === 'length' ? row.originalLength :
-                                 scalingDimension === 'width' ? row.originalWidth :
-                                 row.originalHeight;
-    
-    const scaleFactor = newLength / originalScalingValue;
+      // We need to apply scaling to a clone to get preview values
+      const iesFile = new IESFile(JSON.parse(JSON.stringify(file)));
+      
+      const dimension = row.scalingDimension;
+      
+      // IESFile.updateDimensions takes values in FILE units.
+      // The UI values are in currentUnitsType (file units).
+      // So no conversion needed here if we assume batchFile is up to date with UI unit state.
+      
+      if (dimension === 'length') iesFile.updateDimensions(newLength, undefined, undefined);
+      else if (dimension === 'width') iesFile.updateDimensions(undefined, newLength, undefined);
+      else if (dimension === 'height') iesFile.updateDimensions(undefined, undefined, newLength);
+      
+      const p = iesFile.photometricData;
+      
+      const originalScalingValue = dimension === 'length' ? row.originalLength :
+                                   dimension === 'width' ? row.originalWidth : row.originalHeight;
+      
+      const scaleFactor = originalScalingValue > 0 ? newLength / originalScalingValue : 1;
 
-    const previewLength = scalingDimension === 'length' ? newLength : row.originalLength;
-    const previewWidth = scalingDimension === 'width' ? newLength : row.originalWidth;
-    const previewHeight = scalingDimension === 'height' ? newLength : row.originalHeight;
-
-    const scaled = photometricCalculator.scaleByDimension(
-      photometricData,
-      newLength,
-      scalingDimension
-    );
-
-    return {
-      ...row,
-      targetLength,
-      scaleFactor,
-      previewLength,
-      previewWidth,
-      previewHeight,
-      previewWattage: scaled.scaledPhotometricData.inputWatts,
-      previewLumens: scaled.scaledPhotometricData.totalLumens
-    };
+      return {
+          targetLength: targetLengthVal,
+          scaleFactor,
+          previewLength: p.length,
+          previewWidth: p.width,
+          previewHeight: p.height,
+          previewWattage: p.inputWatts,
+          previewLumens: p.totalLumens
+      };
   };
 
   const updateScalingDimension = (rowIndex: number, dimension: 'length' | 'width') => {
@@ -176,7 +170,8 @@ export function BatchLengthEditorPage() {
       ? row.originalLength
       : row.originalWidth;
     
-    newData[rowIndex] = {
+    // Reset target to original of new dimension
+    const updatedRow = {
       ...row,
       scalingDimension: dimension,
       targetLength: newScalingValue.toFixed(3),
@@ -188,6 +183,7 @@ export function BatchLengthEditorPage() {
       previewLumens: batchFile.photometricData.totalLumens
     };
     
+    newData[rowIndex] = updatedRow;
     setLengthData(newData);
   };
 
@@ -195,12 +191,9 @@ export function BatchLengthEditorPage() {
     const batchFile = batchFiles[rowIndex];
     if (!batchFile) return;
 
+    const preview = calculatePreview(batchFile, lengthData[rowIndex], value);
     const newData = [...lengthData];
-    newData[rowIndex] = updateLengthPreview(
-      newData[rowIndex], 
-      value,
-      batchFile.photometricData
-    );
+    newData[rowIndex] = { ...newData[rowIndex], ...preview };
     setLengthData(newData);
   };
 
@@ -208,7 +201,6 @@ export function BatchLengthEditorPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Reset input so the same file can be selected again
     event.target.value = '';
 
     const reader = new FileReader();
@@ -344,19 +336,20 @@ export function BatchLengthEditorPage() {
       let scalingDimension = row.scalingDimension;
       if (csvRow.scalingDimension) {
         if (csvRow.scalingDimension === 'length' || csvRow.scalingDimension === 'width') {
-          scalingDimension = csvRow.scalingDimension;
+          scalingDimension = csvRow.scalingDimension as 'length' | 'width';
         }
       }
 
       // Update target length
       const targetLength = csvRow.targetLength.trim();
 
-      // Update the row using updateLengthPreview
-      newLengthData[rowIndex] = updateLengthPreview(
-        { ...row, scalingDimension },
-        targetLength,
-        batchFile.photometricData
+      const preview = calculatePreview(
+          batchFile,
+          { ...row, scalingDimension },
+          targetLength
       );
+
+      newLengthData[rowIndex] = { ...row, scalingDimension, ...preview };
     });
 
     setLengthData(newLengthData);
@@ -390,17 +383,15 @@ export function BatchLengthEditorPage() {
         const targetLength = parseFloat(lengthRow.targetLength);
         if (isNaN(targetLength) || targetLength <= 0) continue;
 
-        let updatedFile = { ...file };
+        const iesFile = new IESFile(JSON.parse(JSON.stringify(file)));
+        const dimension = lengthRow.scalingDimension;
         
-        const result = photometricCalculator.scaleByDimension(
-          updatedFile.photometricData,
-          targetLength,
-          lengthRow.scalingDimension
-        );
-        
-        updatedFile.photometricData = result.scaledPhotometricData;
+        // Apply scaling
+        if (dimension === 'length') iesFile.updateDimensions(targetLength, undefined, undefined);
+        else if (dimension === 'width') iesFile.updateDimensions(undefined, targetLength, undefined);
+        else if (dimension === 'height') iesFile.updateDimensions(undefined, undefined, targetLength);
 
-        const iesContent = iesGenerator.generate(updatedFile);
+        const iesContent = iesFile.write();
         zip.file(file.fileName, iesContent);
       }
 
@@ -609,7 +600,7 @@ export function BatchLengthEditorPage() {
                         {editingCell === rowIndex ? (
                           <input
                             type="number"
-                            step="0.0001"
+                            step="any"
                             value={row.targetLength}
                             onChange={(e) => updateLength(rowIndex, e.target.value)}
                             onBlur={() => setEditingCell(null)}
@@ -669,7 +660,7 @@ export function BatchLengthEditorPage() {
           ...(row.scalingDimension && { other: row.scalingDimension }) // Use 'other' field to display scalingDimension
         } as CSVRow))}
         title="Preview Length CSV Data"
-        headers={['filename', 'length', ...(pendingCSVData.some(row => row.scalingDimension) ? ['other'] : [])] as (keyof CSVRow)[]}
+        headers={['filename', 'length', ...(pendingCSVData.some(row => row.scalingDimension) ? ['other'] : [])] as unknown as (keyof CSVRow)[]}
       />
     </div>
   );

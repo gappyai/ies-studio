@@ -94,7 +94,7 @@ export function CSVEditorTable({
                       ) : isWattage || isLumens ? (
                         <input
                           type="number"
-                          step={isWattage ? "0.01" : "1"}
+                          step="any"
                           value={row[header] || ''}
                           onChange={(e) => onCellUpdate(rowIndex, header, e.target.value)}
                           onBlur={() => setEditingCell(null)}

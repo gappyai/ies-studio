@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import { Upload, Download } from 'lucide-react';
 import { useIESFileStore, type BatchFile } from '../store/iesFileStore';
-import { iesParser } from '../services/iesParser';
-import { iesGenerator } from '../services/iesGenerator';
-import { photometricCalculator } from '../services/calculator';
 import { csvService, type CSVRow } from '../services/csvService';
+import { IESFile } from '../models/IESFile';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { BatchActionBar } from '../components/common/BatchActionBar';
@@ -44,19 +42,19 @@ export function BatchLumensEditorPage() {
         if (!file.name.toLowerCase().endsWith('.ies')) continue;
 
         const content = await file.text();
-        const parsedFile = iesParser.parse(content, file.name, file.size);
+        const iesFile = IESFile.parse(content, file.name);
         
         const batchFile: BatchFile = {
-          ...parsedFile,
+          ...iesFile.data,
           id: `${file.name}-${Date.now()}-${i}`,
           metadataUpdates: {}
         };
 
         newBatchFiles.push(batchFile);
 
-        const originalWattage = parsedFile.photometricData.inputWatts;
-        const originalLumens = parsedFile.photometricData.totalLumens;
-        const efficacy = photometricCalculator.calculateEfficacy(originalLumens, originalWattage);
+        const originalWattage = iesFile.photometricData.inputWatts;
+        const originalLumens = iesFile.photometricData.totalLumens;
+        const efficacy = originalWattage > 0 ? originalLumens / originalWattage : 0;
 
         newLumensData.push({
           filename: file.name,
@@ -82,7 +80,6 @@ export function BatchLumensEditorPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Reset input so the same file can be selected again
     event.target.value = '';
 
     const reader = new FileReader();
@@ -104,45 +101,70 @@ export function BatchLumensEditorPage() {
     reader.readAsText(file);
   };
 
+  const calculatePreview = (file: BatchFile, newLumensVal: string, adjustWattage: boolean): { previewLumens: number, previewWattage: number, previewEfficacy: number } => {
+      const newLumens = parseFloat(newLumensVal);
+      if (isNaN(newLumens) || newLumens <= 0) {
+          return {
+              previewLumens: file.photometricData.totalLumens,
+              previewWattage: file.photometricData.inputWatts,
+              previewEfficacy: file.photometricData.inputWatts > 0 ? file.photometricData.totalLumens / file.photometricData.inputWatts : 0
+          };
+      }
+
+      const iesFile = new IESFile(JSON.parse(JSON.stringify(file)));
+      iesFile.updateLumens(newLumens, adjustWattage);
+      
+      const p = iesFile.photometricData;
+      return {
+          previewLumens: p.totalLumens,
+          previewWattage: p.inputWatts,
+          previewEfficacy: p.inputWatts > 0 ? p.totalLumens / p.inputWatts : 0
+      };
+  };
+
   const applyCSVData = () => {
     const updatedData = pendingCSVData.map(newRow => {
-      const existingRow = lumensData.find(r => r.filename === newRow.filename);
-      if (!existingRow) return null;
+      const rowIndex = lumensData.findIndex(r => r.filename === newRow.filename);
+      if (rowIndex === -1) return null;
+      
+      const existingRow = lumensData[rowIndex];
+      const batchFile = batchFiles[rowIndex];
+      if (!batchFile) return null;
 
       const lumensValue = newRow.lumens || newRow.wattage || ''; // Support both lumens and wattage field names
       const newLumens = lumensValue.trim() !== '' ? lumensValue : existingRow.newLumens;
 
-      return updateLumensPreview(existingRow, newLumens);
+      const preview = calculatePreview(batchFile, newLumens, autoAdjustWattage);
+
+      return {
+          ...existingRow,
+          newLumens,
+          ...preview
+      };
     }).filter((row): row is LumensRow => row !== null);
     
-    setLumensData(updatedData);
+    // We need to merge updated rows into lumensData, keeping others
+    const newLumensData = [...lumensData];
+    updatedData.forEach(row => {
+        const index = newLumensData.findIndex(r => r.filename === row.filename);
+        if (index !== -1) newLumensData[index] = row;
+    });
+    
+    setLumensData(newLumensData);
     setPendingCSVData([]);
   };
 
-  const updateLumensPreview = (row: LumensRow, newLumens: string): LumensRow => {
-    const lumens = parseFloat(newLumens);
-    if (isNaN(lumens) || lumens <= 0) {
-      return { ...row, newLumens, previewLumens: row.originalLumens };
-    }
-
-    const previewWattage = autoAdjustWattage
-      ? (lumens / row.originalLumens) * row.originalWattage
-      : row.originalWattage;
-    
-    const previewEfficacy = lumens / previewWattage;
-
-    return {
-      ...row,
-      newLumens,
-      previewWattage,
-      previewLumens: lumens,
-      previewEfficacy
-    };
-  };
-
   const updateLumens = (rowIndex: number, value: string) => {
+    const batchFile = batchFiles[rowIndex];
+    if (!batchFile) return;
+
+    const preview = calculatePreview(batchFile, value, autoAdjustWattage);
     const newData = [...lumensData];
-    newData[rowIndex] = updateLumensPreview(newData[rowIndex], value);
+    newData[rowIndex] = {
+        ...newData[rowIndex],
+        newLumens: value,
+        ...preview
+    };
     setLumensData(newData);
   };
 
@@ -165,25 +187,20 @@ export function BatchLumensEditorPage() {
     try {
       const zip = new JSZip();
 
-      for (const file of batchFiles) {
-        const lumensRow = lumensData.find(row => row.filename === file.fileName);
+      for (let i = 0; i < batchFiles.length; i++) {
+        const file = batchFiles[i];
+        const lumensRow = lumensData[i];
         if (!lumensRow) continue;
 
-        let updatedFile = { ...file };
-        
         const newLumens = parseFloat(lumensRow.newLumens);
-        const lumensChanged = !isNaN(newLumens) && Math.abs(newLumens - file.photometricData.totalLumens) > 0.1;
-
-        if (lumensChanged) {
-          const result = photometricCalculator.scaleByLumens(
-            updatedFile.photometricData,
-            newLumens,
-            autoAdjustWattage
-          );
-          updatedFile.photometricData = result.scaledPhotometricData;
+        const iesFile = new IESFile(JSON.parse(JSON.stringify(file)));
+        
+        if (!isNaN(newLumens) && newLumens > 0) {
+            // Apply update using IESFile logic (same as preview)
+            iesFile.updateLumens(newLumens, autoAdjustWattage);
         }
 
-        const iesContent = iesGenerator.generate(updatedFile);
+        const iesContent = iesFile.write();
         zip.file(file.fileName, iesContent);
       }
 
@@ -199,6 +216,18 @@ export function BatchLumensEditorPage() {
   const clearAll = () => {
     clearBatchFiles();
     setLumensData([]);
+  };
+
+  // Re-calculate all previews when autoAdjustWattage changes
+  const handleAutoAdjustChange = (checked: boolean) => {
+      setAutoAdjustWattage(checked);
+      const newData = lumensData.map((row, index) => {
+          const batchFile = batchFiles[index];
+          if (!batchFile) return row;
+          const preview = calculatePreview(batchFile, row.newLumens, checked);
+          return { ...row, ...preview };
+      });
+      setLumensData(newData);
   };
 
   const actionButtons = [
@@ -298,13 +327,7 @@ export function BatchLumensEditorPage() {
                 type="checkbox"
                 id="autoAdjustWattage"
                 checked={autoAdjustWattage}
-                onChange={(e) => {
-                  setAutoAdjustWattage(e.target.checked);
-                  const updatedData = lumensData.map(row =>
-                    updateLumensPreview(row, row.newLumens)
-                  );
-                  setLumensData(updatedData);
-                }}
+                onChange={(e) => handleAutoAdjustChange(e.target.checked)}
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
               <label htmlFor="autoAdjustWattage" className="text-sm text-gray-700 cursor-pointer font-medium">

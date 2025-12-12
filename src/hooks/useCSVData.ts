@@ -162,7 +162,6 @@ export function useCSVData() {
       if (!csvRow) return file;
       
       // Create independent clone for modification
-      // We use JSON parse/stringify for deep clone as a safe fallback
       const fileClone: BatchFile = JSON.parse(JSON.stringify(file));
       const iesFile = new IESFile(fileClone);
       
@@ -174,11 +173,21 @@ export function useCSVData() {
       if (rowIndex !== -1) {
         updatedData[rowIndex].wattage = iesFile.photometricData.inputWatts.toFixed(2);
         updatedData[rowIndex].lumens = iesFile.photometricData.totalLumens.toFixed(0);
-        // Also update dimensions in CSV to match scaled values?
-        // Usually we want CSV to reflect file state.
-        updatedData[rowIndex].length = iesFile.photometricData.length.toFixed(3);
-        updatedData[rowIndex].width = iesFile.photometricData.width.toFixed(3);
-        updatedData[rowIndex].height = iesFile.photometricData.height.toFixed(3);
+        
+        // Convert file dims to row units for CSV display
+        const fileUnit = iesFile.photometricData.unitsType === 1 ? 'feet' : 'meters';
+        const rowUnit = csvRow.unit || 'meters';
+        
+        const toRowUnit = (v: number) => {
+             if (rowUnit === fileUnit) return v;
+             if (rowUnit === 'feet' && fileUnit === 'meters') return v * 3.28084;
+             if (rowUnit === 'meters' && fileUnit === 'feet') return v / 3.28084;
+             return v;
+        };
+
+        updatedData[rowIndex].length = toRowUnit(iesFile.photometricData.length).toFixed(3);
+        updatedData[rowIndex].width = toRowUnit(iesFile.photometricData.width).toFixed(3);
+        updatedData[rowIndex].height = toRowUnit(iesFile.photometricData.height).toFixed(3);
       }
       
       return fileClone;
@@ -204,7 +213,7 @@ export function useCSVData() {
     
     if (!batchFile) return newCsvData;
     
-    // Handle filename update explicitly as it doesn't affect IES content
+    // Handle filename update explicitly
     if (field === 'filename') {
       let newFilename = value.trim();
       if (newFilename && !newFilename.toLowerCase().endsWith('.ies')) {
@@ -215,29 +224,80 @@ export function useCSVData() {
     }
 
     // Create a temporary row with the update applied
-    const updatedRow = { ...row, [field]: value };
-    
-    // Use IESFile to apply update and calculate effects
     const fileClone: BatchFile = JSON.parse(JSON.stringify(batchFile));
     const iesFile = new IESFile(fileClone);
     
-    // Use applyRow to handle the update logic consistently
-    // We pass the updatedRow which contains the new value for the field
-    csvHandler.applyRow(iesFile, updatedRow, autoAdjustWattage);
+    // Handle Specific Fields to ensure proper side-effects without stale data interference
+    if (field === 'wattage') {
+        const val = parseFloat(value);
+        if (!isNaN(val) && val > 0) {
+            iesFile.updateWattage(val, true); // Always scale lumens/candela
+        }
+    } else if (field === 'lumens') {
+        const val = parseFloat(value);
+        if (!isNaN(val) && val > 0) {
+            iesFile.updateLumens(val, autoAdjustWattage);
+        }
+    } else if (field === 'length' || field === 'width' || field === 'height') {
+        const val = parseFloat(value);
+        if (!isNaN(val) && val > 0) {
+             const rowUnit = row.unit || 'meters';
+             const fileUnit = iesFile.photometricData.unitsType === 1 ? 'feet' : 'meters';
+             
+             const metersToFeet = (m: number) => m * 3.28084;
+             const feetToMeters = (f: number) => f / 3.28084;
+             
+             const toFileUnit = (v: number) => {
+                 if (rowUnit === fileUnit) return v;
+                 if (rowUnit === 'feet' && fileUnit === 'meters') return feetToMeters(v);
+                 if (rowUnit === 'meters' && fileUnit === 'feet') return metersToFeet(v);
+                 return v;
+             };
+             
+             const valInFileUnits = toFileUnit(val);
+             
+             if (field === 'length') iesFile.updateDimensions(valInFileUnits, undefined, undefined);
+             else if (field === 'width') iesFile.updateDimensions(undefined, valInFileUnits, undefined);
+             else if (field === 'height') iesFile.updateDimensions(undefined, undefined, valInFileUnits);
+        }
+    } else {
+        // For other fields (metadata), apply directly via partial update to avoid overwriting other fields
+        const minimalRow: Partial<CSVRow> = {};
+        minimalRow[field] = value;
+        // Use applyRow but essentially only for metadata mapping
+        csvHandler.applyRow(iesFile, minimalRow as CSVRow, autoAdjustWattage);
+    }
     
     // Update store with modified file
     const updatedFiles = batchFiles.map(f => f.id === batchFile.id ? fileClone : f);
     addBatchFiles(updatedFiles);
     
     // Reflect changes back to CSV data
+    const updatedRow = { ...row, [field]: value };
+    
+    // Sync dependent fields from iesFile state
     updatedRow.wattage = iesFile.photometricData.inputWatts.toFixed(2);
     updatedRow.lumens = iesFile.photometricData.totalLumens.toFixed(0);
-    updatedRow.length = iesFile.photometricData.length.toFixed(3);
-    updatedRow.width = iesFile.photometricData.width.toFixed(3);
-    updatedRow.height = iesFile.photometricData.height.toFixed(3);
     
-    // Update metadata fields in CSV if they were changed?
-    // Usually metadata changes in CSV are direct.
+    const fileUnit = iesFile.photometricData.unitsType === 1 ? 'feet' : 'meters';
+    const rowUnit = row.unit || 'meters';
+    
+    const toRowUnit = (v: number) => {
+         if (rowUnit === fileUnit) return v;
+         if (rowUnit === 'feet' && fileUnit === 'meters') return v * 3.28084;
+         if (rowUnit === 'meters' && fileUnit === 'feet') return v / 3.28084;
+         return v;
+    };
+    
+    updatedRow.length = toRowUnit(iesFile.photometricData.length).toFixed(3);
+    updatedRow.width = toRowUnit(iesFile.photometricData.width).toFixed(3);
+    updatedRow.height = toRowUnit(iesFile.photometricData.height).toFixed(3);
+    
+    // Ensure the input field value is preserved exactly as typed (to avoid cursor jumps)
+    // (Only if it's a numeric field we just calculated)
+    if (['wattage', 'lumens', 'length', 'width', 'height'].includes(field as string)) {
+        (updatedRow as any)[field] = value;
+    }
     
     newCsvData[rowIndex] = updatedRow;
     return newCsvData;
