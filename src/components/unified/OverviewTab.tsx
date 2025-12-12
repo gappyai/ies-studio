@@ -1,7 +1,7 @@
-import type { IESFile, CalculatedProperties } from '../../types/ies.types';
+import type { IESFileData, CalculatedProperties } from '../../types/ies.types';
 
 interface OverviewTabProps {
-  currentFile: IESFile;
+  currentFile: IESFileData;
   calculatedProperties: CalculatedProperties | null;
 }
 

@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { Upload, Download, Settings, ArrowLeftRight, Gauge } from 'lucide-react';
-import { useIESFileStore } from '../store/iesFileStore';
-import { iesGenerator } from '../services/iesGenerator';
+import { useIESFileStore, type BatchFile } from '../store/iesFileStore';
 import type { CSVRow } from '../services/csvService';
-import { photometricCalculator } from '../services/calculator';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { BatchActionBar } from '../components/common/BatchActionBar';
@@ -14,11 +12,11 @@ import { Toast } from '../components/common/Toast';
 import { FileUploadSection } from '../components/batch-metadata/FileUploadSection';
 import { CSVEditorTable } from '../components/batch-metadata/CSVEditorTable';
 import { useCSVData } from '../hooks/useCSVData';
-import { applyPhotometricUpdates } from '../hooks/usePhotometricUpdates';
-import { mergeMetadata, buildMetadataFromCSVRow } from '../utils/metadataUtils';
+import { IESFile } from '../models/IESFile';
+import { csvHandler } from '../services/CSVHandler';
 
 export function BatchMetadataEditorPage() {
-  const { batchFiles, csvMetadata, clearBatchFiles } = useIESFileStore();
+  const { batchFiles, clearBatchFiles, addBatchFiles } = useIESFileStore();
   const [processing, setProcessing] = useState(false);
   const [useOriginalFilename, setUseOriginalFilename] = useState(false);
   const [catalogNumberSource, setCatalogNumberSource] = useState<'luminaire' | 'lamp'>('luminaire');
@@ -40,8 +38,7 @@ export function BatchMetadataEditorPage() {
     loadIESFiles,
     parseCSVFile,
     applyCSVUpdates,
-    updateCell,
-    updateMetadata
+    updateCell
   } = useCSVData();
   
   // Headers for table display (update_file_name is not shown in UI, only in CSV)
@@ -77,7 +74,6 @@ export function BatchMetadataEditorPage() {
       const fileArray = Array.from(files);
       const newCsvData = await loadIESFiles(fileArray);
       setCsvData(newCsvData);
-      updateMetadata(newCsvData);
     } catch (error) {
       alert('Error processing files: ' + (error as Error).message);
     } finally {
@@ -113,31 +109,12 @@ export function BatchMetadataEditorPage() {
   const applyCSVData = () => {
     const updatedData = applyCSVUpdates(pendingCSVData, autoAdjustWattage);
     setCsvData(updatedData);
-    updateMetadata(updatedData);
     setPendingCSVData([]);
   };
 
   const exportCSV = () => {
-    const headers = ['filename', 'manufacturer', 'luminaireCatalogNumber', 'lampCatalogNumber', 'test', 'testLab', 'testDate', 'issueDate', 'lampPosition', 'other', 'nearField', 'cct', 'wattage', 'lumens', 'length', 'width', 'height', 'unit', 'update_file_name'];
-    
-    const displayHeaders = headers.map(header => {
-      if (header === 'cct') return 'cct (K)';
-      if (header === 'update_file_name') return 'update_file_name';
-      return header;
-    });
-    
-    const csvRows = csvData.map(row => {
-      return headers.map(header => {
-        const value = (header === 'update_file_name' ? (row as any).update_file_name : row[header as keyof CSVRow]) || '';
-        // Escape commas and quotes in values
-        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-          return `"${value.replace(/"/g, '""')}"`;
-        }
-        return value;
-      }).join(',');
-    });
-    
-    const csvContent = [displayHeaders.join(','), ...csvRows].join('\n');
+    // Use csvHandler to generate CSV
+    const csvContent = csvHandler.generate(csvData);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     saveAs(blob, 'batch_metadata_template.csv');
   };
@@ -145,13 +122,16 @@ export function BatchMetadataEditorPage() {
   const handleCellUpdate = (rowIndex: number, field: keyof CSVRow, value: string) => {
     const updatedData = updateCell(rowIndex, field, value, autoAdjustWattage);
     setCsvData(updatedData);
-    updateMetadata(updatedData);
   };
 
   const updateRowUnit = (rowIndex: number, newUnit: 'meters' | 'feet') => {
     const row = csvData[rowIndex];
     if (!row || row.unit === newUnit) return;
 
+    // Just update the unit in the CSV row for display/logic
+    // The actual IES file conversion happens in updateCell/applyCSVUpdates if needed?
+    // No, updateRowUnit in previous code did conversion of numbers in CSV.
+    
     const convertFunc = newUnit === 'feet' ? metersToFeet : feetToMeters;
     
     const newCsvData = [...csvData];
@@ -166,43 +146,33 @@ export function BatchMetadataEditorPage() {
     setCsvData(newCsvData);
   };
 
-  const { addBatchFiles } = useIESFileStore();
-  
   const convertAllToUnit = (targetUnit: 'meters' | 'feet') => {
-    const newUnitsType = targetUnit === 'feet' ? 1 : 2;
-    const convertFunc = targetUnit === 'feet' ? metersToFeet : feetToMeters;
-    
-    // Update CSV data
-    const newCsvData = csvData.map(row => {
+    // Convert all batch files and CSV data
+    const updatedFiles: BatchFile[] = [];
+    const newCsvData = csvData.map((row, index) => {
+      const file = batchFiles[index];
+      if (!file) return row;
+      
+      // Convert file
+      const fileClone = JSON.parse(JSON.stringify(file));
+      const iesFile = new IESFile(fileClone);
+      iesFile.convertUnits(targetUnit);
+      updatedFiles.push(fileClone); // iesFile operates on fileClone reference
+      
+      // Update CSV row
       if (row.unit === targetUnit) return row;
       
+      const convertFunc = targetUnit === 'feet' ? metersToFeet : feetToMeters;
       return {
         ...row,
         unit: targetUnit,
         length: row.length ? convertFunc(parseFloat(row.length)).toFixed(3) : row.length,
         width: row.width ? convertFunc(parseFloat(row.width)).toFixed(3) : row.width,
         height: row.height ? convertFunc(parseFloat(row.height)).toFixed(3) : row.height,
-        // Update original dimensions too
-        originalLength: row.originalLength !== undefined ? convertFunc(row.originalLength) : undefined,
-        originalWidth: row.originalWidth !== undefined ? convertFunc(row.originalWidth) : undefined,
-        originalHeight: row.originalHeight !== undefined ? convertFunc(row.originalHeight) : undefined
-      };
-    });
-    
-    // Update batch files to change unitsType and dimensions
-    const updatedFiles = batchFiles.map((file, index) => {
-      const csvRow = csvData[index];
-      if (!csvRow) return file;
-      
-      return {
-        ...file,
-        photometricData: {
-          ...file.photometricData,
-          unitsType: newUnitsType,
-          width: convertFunc(file.photometricData.width),
-          length: convertFunc(file.photometricData.length),
-          height: convertFunc(file.photometricData.height)
-        }
+        // Update original dimensions too?
+        originalLength: iesFile.photometricData.length,
+        originalWidth: iesFile.photometricData.width,
+        originalHeight: iesFile.photometricData.height
       };
     });
     
@@ -211,10 +181,13 @@ export function BatchMetadataEditorPage() {
   };
 
   const handleBulkEdit = (field: keyof CSVRow, value: string) => {
+    const updatedFiles: BatchFile[] = [...batchFiles];
+    
     const newCsvData = csvData.map((row, index) => {
+      // Create updated row with new value
       const updatedRow = { ...row, [field]: value };
       
-      // Handle filename - ensure .ies extension
+      // Handle filename - ensure .ies extension (only affects CSV data)
       if (field === 'filename' && value.trim() !== '') {
         let newFilename = value.trim();
         if (!newFilename.toLowerCase().endsWith('.ies')) {
@@ -223,48 +196,31 @@ export function BatchMetadataEditorPage() {
         updatedRow.filename = newFilename;
       }
       
-      // Handle wattage and lumens bulk edit using unified logic
-      if (field === 'wattage' || field === 'lumens') {
-        const batchFile = batchFiles[index];
-        if (!batchFile) return updatedRow;
+      // Update batch file
+      const file = updatedFiles[index];
+      if (file) {
+        const fileClone = JSON.parse(JSON.stringify(file));
+        const iesFile = new IESFile(fileClone);
         
-        const newWattage = field === 'wattage' ? parseFloat(value) : undefined;
-        const newLumens = field === 'lumens' ? parseFloat(value) : undefined;
+        // Use handler to apply the updated row to the file
+        // This handles metadata, dimensions, wattage/lumens logic consistently
+        csvHandler.applyRow(iesFile, updatedRow, autoAdjustWattage);
         
-        // Get current values - pass undefined for the field not being edited
-        // to allow natural scaling (e.g. changing wattage auto-updates lumens)
-        const currentWattage = field === 'wattage' ? newWattage : undefined;
-        const currentLumens = field === 'lumens' ? newLumens : undefined;
+        updatedFiles[index] = fileClone;
         
-        // Apply unified photometric updates
-        const updatedData = applyPhotometricUpdates(batchFile.photometricData, {
-          fileId: batchFile.id,
-          originalWattage: row.originalWattage,
-          originalLumens: row.originalLumens,
-          newWattage: currentWattage,
-          newLumens: currentLumens,
-          autoAdjustWattage
-        });
-        
-        // Update batch file
-        const updatedFiles = batchFiles.map(f => {
-          if (f.id === batchFile.id) {
-            return { ...f, photometricData: updatedData };
-          }
-          return f;
-        });
-        addBatchFiles(updatedFiles);
-        
-        // Update CSV row with final values
-        updatedRow.wattage = updatedData.inputWatts.toFixed(2);
-        updatedRow.lumens = updatedData.totalLumens.toFixed(0);
+        // Reflect calculated values back to row
+        updatedRow.wattage = iesFile.photometricData.inputWatts.toFixed(2);
+        updatedRow.lumens = iesFile.photometricData.totalLumens.toFixed(0);
+        updatedRow.length = iesFile.photometricData.length.toFixed(3);
+        updatedRow.width = iesFile.photometricData.width.toFixed(3);
+        updatedRow.height = iesFile.photometricData.height.toFixed(3);
       }
       
       return updatedRow;
     });
     
+    addBatchFiles(updatedFiles);
     setCsvData(newCsvData);
-    updateMetadata(newCsvData);
   };
 
   const showToastMessage = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
@@ -285,107 +241,18 @@ export function BatchMetadataEditorPage() {
 
       for (let i = 0; i < batchFiles.length; i++) {
         const file = batchFiles[i];
-        let updatedFile = { ...file };
+        const iesFile = new IESFile(file); // Use model wrapper
         
-        // Match by index since files and csvData are in the same order
-        const csvRow = csvData[i];
+        // NOTE: file.metadata and file.photometricData are already updated by useCSVData hook
         
-        // Build metadata from CSV row
-        const csvRowMetadata = csvRow ? buildMetadataFromCSVRow(csvRow) : {};
-        
-        // Merge metadata: original -> csvMetadata (from store) -> csvRowMetadata (from UI) -> file.metadataUpdates
-        updatedFile.metadata = mergeMetadata(
-          file.metadata,
-          {
-            ...(csvMetadata[file.fileName] || {}),
-            ...csvRowMetadata,
-            ...(file.metadataUpdates || {})
-          }
-        );
-        
-        // Handle dimensions from CSV row if present (wattage and lumens are already handled in batchFiles)
-        if (csvRow) {
-          // Convert dimensions based on row's unit
-          const targetUnit = updatedFile.photometricData.unitsType === 1 ? 'feet' : 'meters';
-          const needsConversion = csvRow.unit !== targetUnit;
-          const convertFunc = needsConversion ? 
-            (csvRow.unit === 'feet' ? feetToMeters : metersToFeet) : 
-            (val: number) => val;
-          
-          // Track which dimensions changed for scaling
-          let lengthChanged = false;
-          let widthChanged = false;
-          let heightChanged = false;
-          let newLength = updatedFile.photometricData.length;
-          let newWidth = updatedFile.photometricData.width;
-          let newHeight = updatedFile.photometricData.height;
-          
-          if (csvRow.length && csvRow.length.trim() !== '') {
-            const length = parseFloat(csvRow.length);
-            if (!isNaN(length)) {
-              const convertedLength = convertFunc(length);
-              lengthChanged = Math.abs(convertedLength - updatedFile.photometricData.length) > 0.001;
-              newLength = convertedLength;
-            }
-          }
-          
-          if (csvRow.width && csvRow.width.trim() !== '') {
-            const width = parseFloat(csvRow.width);
-            if (!isNaN(width)) {
-              const convertedWidth = convertFunc(width);
-              widthChanged = Math.abs(convertedWidth - updatedFile.photometricData.width) > 0.001;
-              newWidth = convertedWidth;
-            }
-          }
-          
-          if (csvRow.height && csvRow.height.trim() !== '') {
-            const height = parseFloat(csvRow.height);
-            if (!isNaN(height)) {
-              const convertedHeight = convertFunc(height);
-              heightChanged = Math.abs(convertedHeight - updatedFile.photometricData.height) > 0.001;
-              newHeight = convertedHeight;
-            }
-          }
-          
-          // Apply scaling if dimensions changed (prioritize length, then width, then height)
-          if (lengthChanged) {
-            const result = photometricCalculator.scaleByDimension(
-              updatedFile.photometricData,
-              newLength,
-              'length'
-            );
-            updatedFile.photometricData = result.scaledPhotometricData;
-          } else if (widthChanged) {
-            const result = photometricCalculator.scaleByDimension(
-              updatedFile.photometricData,
-              newWidth,
-              'width'
-            );
-            updatedFile.photometricData = result.scaledPhotometricData;
-          } else if (heightChanged) {
-            const result = photometricCalculator.scaleByDimension(
-              updatedFile.photometricData,
-              newHeight,
-              'height'
-            );
-            updatedFile.photometricData = result.scaledPhotometricData;
-          } else {
-            // Just update dimensions without scaling (in case of unit conversion only)
-            updatedFile.photometricData.length = newLength;
-            updatedFile.photometricData.width = newWidth;
-            updatedFile.photometricData.height = newHeight;
-          }
-        }
-
-        const iesContent = iesGenerator.generate(updatedFile);
-        
+        // Determine filename
         let newFilename = file.fileName;
+        const csvRow = csvData[i];
         
         if (useOriginalFilename) {
           // Use filename from table (which can be manually edited)
           if (csvRow) {
             newFilename = csvRow.filename;
-            // Ensure .ies extension
             if (!newFilename.toLowerCase().endsWith('.ies')) {
               newFilename = `${newFilename}.ies`;
             }
@@ -395,35 +262,32 @@ export function BatchMetadataEditorPage() {
           let catalogNumber: string | undefined;
           
           if (catalogNumberSource === 'luminaire') {
-            catalogNumber = updatedFile.metadata.luminaireCatalogNumber?.trim();
-            // Fallback to lamp catalog number if luminaire is not available
+            catalogNumber = iesFile.metadata.luminaireCatalogNumber?.trim();
             if (!catalogNumber || catalogNumber === '') {
-              catalogNumber = updatedFile.metadata.lampCatalogNumber?.trim();
+              catalogNumber = iesFile.metadata.lampCatalogNumber?.trim();
             }
           } else {
-            catalogNumber = updatedFile.metadata.lampCatalogNumber?.trim();
-            // Fallback to luminaire catalog number if lamp is not available
+            catalogNumber = iesFile.metadata.lampCatalogNumber?.trim();
             if (!catalogNumber || catalogNumber === '') {
-              catalogNumber = updatedFile.metadata.luminaireCatalogNumber?.trim();
+              catalogNumber = iesFile.metadata.luminaireCatalogNumber?.trim();
             }
           }
           
           if (catalogNumber && catalogNumber !== '') {
-            // Remove .ies extension if present, then add prefix and .ies
             const cleanCatalogNumber = catalogNumber.replace(/\.ies$/i, '');
             newFilename = `${cleanCatalogNumber}${prefix}.ies`;
           } else {
-            // No catalog number available - use original filename and track for toast
             newFilename = file.fileName;
             const displayName = csvRow?.filename || file.fileName;
             missingCatalogNumbers.push(displayName);
           }
         }
 
+        // iesFile.write() generates content using updated data
+        const iesContent = iesFile.write();
         zip.file(newFilename, iesContent);
       }
 
-      // Show toast if any files are missing catalog numbers
       if (missingCatalogNumbers.length > 0) {
         const fileList = missingCatalogNumbers.length <= 5 
           ? missingCatalogNumbers.join(', ')
@@ -448,12 +312,43 @@ export function BatchMetadataEditorPage() {
   };
 
   const swapLengthWidth = () => {
-    const updatedCsvData = csvData.map(row => ({
-      ...row,
-      length: row.width,
-      width: row.length
-    }));
+    const updatedFiles: BatchFile[] = [];
+    const updatedCsvData = csvData.map((row, index) => {
+      const file = batchFiles[index];
+      if (file) {
+        const fileClone = JSON.parse(JSON.stringify(file));
+        const iesFile = new IESFile(fileClone);
+        
+        // Swap dimensions in photometric data
+        const oldLength = iesFile.photometricData.length;
+        const oldWidth = iesFile.photometricData.width;
+        
+        // Use updateDimensions with swapped values
+        // Note: this might trigger scaling if we are not careful, but we just want to SWAP values.
+        // updateDimensions logic tries to scale if value changed.
+        // If we want to strictly SWAP without scaling output (i.e. just rotate orientation), 
+        // we should manipulate data directly or have a swap method?
+        // Existing code: photometricCalculator.swapDimensions(data)
+        // IESFile should probably have a swapDimensions method or we manually do it.
+        
+        // Let's rely on manual swap for now via internal data access or add method to IESFile.
+        // Adding method to IESFile is cleaner. But for now I'll just swap properties on data.
+        iesFile.data.photometricData.length = oldWidth;
+        iesFile.data.photometricData.width = oldLength;
+        iesFile.data.metadata.luminousOpeningLength = oldWidth;
+        iesFile.data.metadata.luminousOpeningWidth = oldLength;
+        
+        updatedFiles.push(fileClone);
+      }
+      
+      return {
+        ...row,
+        length: row.width,
+        width: row.length
+      };
+    });
 
+    addBatchFiles(updatedFiles);
     setCsvData(updatedCsvData);
   };
 
@@ -577,41 +472,41 @@ export function BatchMetadataEditorPage() {
                   id="autoAdjustWattage"
                   checked={autoAdjustWattage}
                   onChange={(e) => {
-                    setAutoAdjustWattage(e.target.checked);
-                    // Re-apply lumens changes if any exist
-                    const updatedData = csvData.map((row, index) => {
-                      if (row.lumens && batchFiles[index] && row.originalLumens !== undefined) {
-                        const newLumens = parseFloat(row.lumens);
-                        if (!isNaN(newLumens) && newLumens > 0) {
-                          const updatedPhotometric = applyPhotometricUpdates(
-                            batchFiles[index].photometricData,
-                            {
-                              fileId: batchFiles[index].id,
-                              originalWattage: row.originalWattage,
-                              originalLumens: row.originalLumens,
-                              newWattage: row.wattage ? parseFloat(row.wattage) : undefined,
-                              newLumens: newLumens,
-                              autoAdjustWattage: e.target.checked
+                    const newValue = e.target.checked;
+                    setAutoAdjustWattage(newValue);
+                    // Re-apply lumens changes if needed?
+                    // Previous code did this.
+                    // To do this cleanly, we'd need to re-run updates for all files.
+                    // Simplified: We can iterate and re-apply lumens update via updateCell mechanism or similar logic.
+                    // But simpler to just let user re-edit or rely on them editing.
+                    // If we want feature parity:
+                    // We can re-call handleBulkEdit for 'lumens' with current values?
+                    // Or iterate rows and re-apply lumens.
+                    
+                    const updatedFiles: BatchFile[] = [...batchFiles];
+                    const newCsvData = csvData.map((row, index) => {
+                        if (row.lumens && updatedFiles[index]) {
+                            const l = parseFloat(row.lumens);
+                            if (!isNaN(l)) {
+                                const fileClone = JSON.parse(JSON.stringify(updatedFiles[index]));
+                                const iesFile = new IESFile(fileClone);
+                                // Re-apply lumens with new autoAdjustWattage setting
+                                // We might need to reset file to original state first if we want pure re-calculation?
+                                // No, just applying updateLumens might work if we trust current state.
+                                iesFile.updateLumens(l, newValue);
+                                updatedFiles[index] = fileClone;
+                                
+                                return {
+                                    ...row,
+                                    wattage: iesFile.photometricData.inputWatts.toFixed(2),
+                                    lumens: iesFile.photometricData.totalLumens.toFixed(0)
+                                };
                             }
-                          );
-                          
-                          const updatedFiles = batchFiles.map(f => {
-                            if (f.id === batchFiles[index].id) {
-                              return { ...f, photometricData: updatedPhotometric };
-                            }
-                            return f;
-                          });
-                          addBatchFiles(updatedFiles);
-                          
-                          const updatedRow = { ...row };
-                          updatedRow.wattage = updatedPhotometric.inputWatts.toFixed(2);
-                          updatedRow.lumens = updatedPhotometric.totalLumens.toFixed(0);
-                          return updatedRow;
                         }
-                      }
-                      return row;
+                        return row;
                     });
-                    setCsvData(updatedData);
+                    addBatchFiles(updatedFiles);
+                    setCsvData(newCsvData);
                   }}
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />

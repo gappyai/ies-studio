@@ -10,7 +10,7 @@
 import { iesParser } from '../iesParser';
 import { iesGenerator } from '../iesGenerator';
 import { csvService } from '../csvService';
-import type { IESFile, IESMetadata } from '../../types/ies.types';
+import type { IESFileData, IESMetadata } from '../../types/ies.types';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -118,7 +118,7 @@ async function runTests() {
       issueDate: csvRow.issueDate || '',
     };
     const merged = mergeMetadata(parsedFile.metadata, csvMetadata);
-    const updatedFile: IESFile = {
+    const updatedFile: IESFileData = {
       ...parsedFile,
       metadata: merged,
     };
@@ -141,7 +141,7 @@ async function runTests() {
       testLab: 'LEDFLEX',
     };
     const merged = mergeMetadata(parsedFile.metadata, csvMetadata);
-    const updatedFile: IESFile = {
+    const updatedFile: IESFileData = {
       ...parsedFile,
       metadata: merged,
     };
@@ -163,7 +163,7 @@ async function runTests() {
       issueDate: csvRow.issueDate || '',
     };
     const merged = mergeMetadata(parsedFile.metadata, csvMetadata);
-    const updatedFile: IESFile = {
+    const updatedFile: IESFileData = {
       ...parsedFile,
       metadata: merged,
     };

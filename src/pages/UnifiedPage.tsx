@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useIESFileStore } from '../store/iesFileStore';
-import { iesGenerator } from '../services/iesGenerator';
-import { iesParser } from '../services/iesParser';
 import { photometricCalculator } from '../services/calculator';
 import { saveAs } from 'file-saver';
-import type { IESMetadata, PhotometricData, IESFile } from '../types/ies.types';
+import type { IESMetadata, PhotometricData, IESFileData } from '../types/ies.types';
 import { FileUploadScreen } from '../components/unified/FileUploadScreen';
 import { FileHeader } from '../components/unified/FileHeader';
 import { OverviewTab } from '../components/unified/OverviewTab';
@@ -12,6 +10,7 @@ import { EditTab } from '../components/unified/EditTab';
 import { ChartsTab } from '../components/unified/ChartsTab';
 import { View3DTab } from '../components/unified/View3DTab';
 import { Toast } from '../components/common/Toast';
+import { IESFile } from '../models/IESFile';
 
 // Helper function to merge metadata, only including non-empty values
 const mergeMetadata = (
@@ -96,10 +95,12 @@ export function UnifiedPage() {
 
     try {
       const content = await file.text();
-      const parsedFile = iesParser.parse(content, file.name, file.size);
-      const calculated = photometricCalculator.calculateProperties(parsedFile.photometricData);
+      // Use IESFile model for parsing
+      const iesFile = IESFile.parse(content, file.name);
       
-      setCurrentFile(parsedFile);
+      const calculated = photometricCalculator.calculateProperties(iesFile.photometricData);
+      
+      setCurrentFile(iesFile.data);
       setCalculatedProperties(calculated);
       setActiveTab('overview'); // Reset to overview when new file is loaded
     } catch (err) {
@@ -172,14 +173,15 @@ export function UnifiedPage() {
     // Create a merged file with all edits applied - safely merge metadata
     // Use currentFile which should have edits applied if isDirty was true
     // Otherwise merge editedData safely
-    const fileToGenerate: IESFile = {
+    const fileToGenerate: IESFileData = {
       ...currentFile,
       metadata: mergeMetadata(currentFile.metadata, editedData),
       photometricData: { ...currentFile.photometricData, ...editedPhotometricData }
     };
     
-    // Generate IES content with the merged data
-    const iesContent = iesGenerator.generate(fileToGenerate);
+    // Generate IES content using IESFile model
+    const iesFile = new IESFile(fileToGenerate);
+    const iesContent = iesFile.write();
     const blob = new Blob([iesContent], { type: 'text/plain;charset=utf-8' });
     
     // Ensure filename has .ies extension

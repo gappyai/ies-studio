@@ -1,8 +1,8 @@
-import type { IESFile, IESMetadata, PhotometricData } from '../../types/ies.types';
+import type { IESFileData, IESMetadata, PhotometricData } from '../../types/ies.types';
 import { IntegratedPhotometricEditor } from '../common/IntegratedPhotometricEditor';
 
 interface EditTabProps {
-  currentFile: IESFile;
+  currentFile: IESFileData;
   localData: Partial<IESMetadata>;
   localPhotometricData: Partial<PhotometricData>;
   isDirty: boolean;
