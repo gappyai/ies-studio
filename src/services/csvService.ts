@@ -267,9 +267,14 @@ export class CSVService {
     rows.forEach((row, index) => {
       if (!row.filename) {
         errors.push(`Row ${index + 1}: Missing filename`);
-      } else if (existingFilenames && !existingFilenames.includes(row.filename)) {
-          // Check if filename matches any existing file
-          errors.push(`Row ${index + 1}: Filename "${row.filename}" not found in loaded files`);
+      } else if (existingFilenames) {
+          // Check if filename matches any existing file (case-insensitive)
+          const rowFilenameLower = row.filename.toLowerCase();
+          const exists = existingFilenames.some(f => f.toLowerCase() === rowFilenameLower);
+          
+          if (!exists) {
+            errors.push(`Row ${index + 1}: Filename "${row.filename}" not found in loaded files`);
+          }
       }
     });
 

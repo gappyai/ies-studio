@@ -293,8 +293,8 @@ export function BatchLengthEditorPage() {
     }
 
     rows.forEach((row, index) => {
-      // Check if filename exists in lengthData
-      const existingRow = lengthData.find(r => r.filename === row.filename);
+      // Check if filename exists in lengthData (case-insensitive)
+      const existingRow = lengthData.find(r => r.filename.toLowerCase() === row.filename.toLowerCase());
       if (!existingRow) {
         errors.push(`Row ${index + 2}: Filename "${row.filename}" not found in uploaded files`);
       }
@@ -325,7 +325,7 @@ export function BatchLengthEditorPage() {
     const newLengthData = [...lengthData];
 
     pendingCSVData.forEach((csvRow) => {
-      const rowIndex = newLengthData.findIndex(r => r.filename === csvRow.filename);
+      const rowIndex = newLengthData.findIndex(r => r.filename.toLowerCase() === csvRow.filename.toLowerCase());
       if (rowIndex < 0) return;
 
       const row = newLengthData[rowIndex];

@@ -163,7 +163,10 @@ export function BatchMetadataEditorPage() {
           // Use filename from table (which can be manually edited)
           if (csvRow) {
             newFilename = csvRow.filename;
-            if (!newFilename.toLowerCase().endsWith('.ies')) {
+            // Ensure lowercase .ies extension
+            if (newFilename.toLowerCase().endsWith('.ies')) {
+              newFilename = newFilename.replace(/\.ies$/i, '.ies');
+            } else {
               newFilename = `${newFilename}.ies`;
             }
           }
@@ -188,6 +191,13 @@ export function BatchMetadataEditorPage() {
             newFilename = `${cleanCatalogNumber}${prefix}.ies`;
           } else {
             newFilename = file.fileName;
+            // Ensure lowercase extension for fallback filename too
+            if (newFilename.toLowerCase().endsWith('.ies')) {
+                newFilename = newFilename.replace(/\.ies$/i, '.ies');
+            } else {
+                newFilename = `${newFilename}.ies`;
+            }
+            
             const displayName = csvRow?.filename || file.fileName;
             missingCatalogNumbers.push(displayName);
           }

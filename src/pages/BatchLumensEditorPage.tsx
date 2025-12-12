@@ -124,7 +124,7 @@ export function BatchLumensEditorPage() {
 
   const applyCSVData = () => {
     const updatedData = pendingCSVData.map(newRow => {
-      const rowIndex = lumensData.findIndex(r => r.filename === newRow.filename);
+      const rowIndex = lumensData.findIndex(r => r.filename.toLowerCase() === newRow.filename.toLowerCase());
       if (rowIndex === -1) return null;
       
       const existingRow = lumensData[rowIndex];
@@ -146,7 +146,7 @@ export function BatchLumensEditorPage() {
     // We need to merge updated rows into lumensData, keeping others
     const newLumensData = [...lumensData];
     updatedData.forEach(row => {
-        const index = newLumensData.findIndex(r => r.filename === row.filename);
+        const index = newLumensData.findIndex(r => r.filename.toLowerCase() === row.filename.toLowerCase());
         if (index !== -1) newLumensData[index] = row;
     });
     
