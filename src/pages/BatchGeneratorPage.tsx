@@ -91,7 +91,7 @@ export function BatchGeneratorPage() {
     while (usedFilenames.has(candidate.toLowerCase())) {
       // Insert _N before .ies extension
       const nameWithoutExt = baseFilename.replace(/\.(ies|IES)$/i, '');
-      const ext = baseFilename.match(/\.(ies|IES)$/i)?.[0] || '.ies';
+      const ext = '.ies';
       candidate = `${nameWithoutExt}_${counter}${ext}`;
       counter++;
     }
@@ -158,7 +158,12 @@ export function BatchGeneratorPage() {
         updated.luminaireCatalogNumber = value;
         // Auto-update filename if catalog number is provided
         if (value.trim() !== '') {
-          const catalogFilename = value.endsWith('.ies') ? value : `${value}.ies`;
+          let catalogFilename = value;
+          if (catalogFilename.toLowerCase().endsWith('.ies')) {
+             catalogFilename = catalogFilename.replace(/\.ies$/i, '.ies');
+          } else {
+             catalogFilename = `${catalogFilename}.ies`;
+          }
           updated.filename = generateUniqueFilename(catalogFilename, variants, id);
         } else {
           // If catalog number is cleared, regenerate default filename
@@ -202,7 +207,7 @@ export function BatchGeneratorPage() {
         let counter = 1;
         while (usedFilenames.has(zipFilename.toLowerCase())) {
           const nameWithoutExt = variant.filename.replace(/\.(ies|IES)$/i, '');
-          const ext = variant.filename.match(/\.(ies|IES)$/i)?.[0] || '.ies';
+          const ext = '.ies';
           zipFilename = `${nameWithoutExt}_${counter}${ext}`;
           counter++;
         }
@@ -379,9 +384,11 @@ export function BatchGeneratorPage() {
       // Generate filename - prefer CSV filename, then catalog number, then default
       let filename = csvRow.filename || '';
       if (!filename && luminaireCatalogNumber) {
-        filename = luminaireCatalogNumber.endsWith('.ies') 
-          ? luminaireCatalogNumber 
-          : `${luminaireCatalogNumber}.ies`;
+        if (luminaireCatalogNumber.toLowerCase().endsWith('.ies')) {
+           filename = luminaireCatalogNumber.replace(/\.ies$/i, '.ies');
+        } else {
+           filename = `${luminaireCatalogNumber}.ies`;
+        }
       }
       
       // For default filenames (no CSV filename and no catalog number), ensure uniqueness

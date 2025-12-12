@@ -78,9 +78,15 @@ export function UnifiedPage() {
       // Initialize download filename from LUMCAT or fallback to current filename
       const lumcat = currentFile.metadata.luminaireCatalogNumber;
       if (lumcat) {
-        setDownloadFilename(lumcat.endsWith('.ies') ? lumcat : `${lumcat}.ies`);
+        let initialFilename = lumcat;
+        if (initialFilename.toLowerCase().endsWith('.ies')) {
+          initialFilename = initialFilename.replace(/\.ies$/i, '.ies');
+        } else {
+          initialFilename = `${initialFilename}.ies`;
+        }
+        setDownloadFilename(initialFilename);
       } else {
-        setDownloadFilename(currentFile.fileName.replace(/\.(ies|IES)$/, '_edited.ies'));
+        setDownloadFilename(currentFile.fileName.replace(/\.ies$/i, '_edited.ies'));
       }
     }
   }, [currentFile, editedData, editedPhotometricData]);
@@ -184,8 +190,13 @@ export function UnifiedPage() {
     const iesContent = iesFile.write();
     const blob = new Blob([iesContent], { type: 'text/plain;charset=utf-8' });
     
-    // Ensure filename has .ies extension
-    const filename = downloadFilename.endsWith('.ies') ? downloadFilename : `${downloadFilename}.ies`;
+    // Ensure filename has .ies extension (lowercase)
+    let filename = downloadFilename;
+    if (filename.toLowerCase().endsWith('.ies')) {
+      filename = filename.replace(/\.ies$/i, '.ies');
+    } else {
+      filename = `${filename}.ies`;
+    }
     saveAs(blob, filename);
     showToastMessage(`Downloaded as ${filename}`, 'success');
   };

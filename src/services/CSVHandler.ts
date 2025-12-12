@@ -35,6 +35,10 @@ export class CSVHandler {
    * Apply a CSV row to an IES file
    */
   applyRow(file: IESFile, row: CSVRow, autoAdjustWattage: boolean = false): void {
+    // Capture original values before any updates (to compare against CSV values)
+    const originalWattage = file.photometricData.inputWatts;
+    const originalLumens = file.photometricData.totalLumens;
+
     // 1. Update metadata
     file.updateMetadata({
       manufacturer: row.manufacturer,
@@ -99,14 +103,15 @@ export class CSVHandler {
     const newLumens = row.lumens ? parseFloat(row.lumens) : undefined;
 
     // Apply logic mimicking applyPhotometricUpdates
-    const currentWatts = file.photometricData.inputWatts;
-    if (newWattage !== undefined && !isNaN(newWattage) && Math.abs(newWattage - currentWatts) > 0.001) {
+    // Only update if the value in CSV is DIFFERENT from the original file value.
+    // If it's the same, we assume the user didn't change it, so we let any scaling from updateDimensions take precedence.
+    if (newWattage !== undefined && !isNaN(newWattage) && Math.abs(newWattage - originalWattage) > 0.001) {
       file.updateWattage(newWattage, true); // updateLumens=true (scale everything)
     }
     
     // Check lumens after potential wattage update
-    const currentLumens = file.photometricData.totalLumens;
-    if (newLumens !== undefined && !isNaN(newLumens) && Math.abs(newLumens - currentLumens) > 0.1) {
+    // Only update if the value in CSV is DIFFERENT from the original file value.
+    if (newLumens !== undefined && !isNaN(newLumens) && Math.abs(newLumens - originalLumens) > 0.1) {
       file.updateLumens(newLumens, autoAdjustWattage);
     }
   }

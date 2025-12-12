@@ -123,7 +123,7 @@ export function BatchWattageEditorPage() {
 
   const applyCSVData = () => {
     const updatedData = pendingCSVData.map(newRow => {
-      const rowIndex = wattageData.findIndex(r => r.filename === newRow.filename);
+      const rowIndex = wattageData.findIndex(r => r.filename.toLowerCase() === newRow.filename.toLowerCase());
       if (rowIndex === -1) return null;
       
       const existingRow = wattageData[rowIndex];
@@ -145,7 +145,7 @@ export function BatchWattageEditorPage() {
     // Merge updates
     const newWattageData = [...wattageData];
     updatedData.forEach(row => {
-        const index = newWattageData.findIndex(r => r.filename === row.filename);
+        const index = newWattageData.findIndex(r => r.filename.toLowerCase() === row.filename.toLowerCase());
         if (index !== -1) newWattageData[index] = row;
     });
     

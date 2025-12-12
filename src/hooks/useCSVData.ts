@@ -154,8 +154,8 @@ export function useCSVData() {
     // Use getState() to get the LATEST batchFiles to avoid stale closure issues
     const currentBatchFiles = getStoreState().batchFiles;
     const updatedFiles = currentBatchFiles.map((file) => {
-      // Find matching row by filename (original filename in file object)
-      const csvRow = newCSVData.find(r => r.filename === file.fileName);
+      // Find matching row by filename (original filename in file object) - case insensitive
+      const csvRow = newCSVData.find(r => r.filename.toLowerCase() === file.fileName.toLowerCase());
       if (!csvRow) return file;
       
       const fileClone: BatchFile = JSON.parse(JSON.stringify(file));
@@ -166,7 +166,11 @@ export function useCSVData() {
       // Update filename if provided in update_file_name
       if (csvRow.update_file_name && csvRow.update_file_name.trim() !== '') {
           let newName = csvRow.update_file_name.trim();
-          if (!newName.toLowerCase().endsWith('.ies')) newName += '.ies';
+          if (newName.toLowerCase().endsWith('.ies')) {
+             newName = newName.replace(/\.ies$/i, '.ies');
+          } else {
+             newName += '.ies';
+          }
           
           // Check for filename collision in the current batch (excluding self)
           const isCollision = currentBatchFiles.some(f => f.fileName === newName && f.id !== file.id);
@@ -422,8 +426,14 @@ export function useCSVData() {
             }
         } else if (field === 'filename') {
              let newName = value.trim();
-             if (newName && !newName.toLowerCase().endsWith('.ies')) newName += '.ies';
-             if (newName) iesFile.fileName = newName;
+             if (newName) {
+                 if (newName.toLowerCase().endsWith('.ies')) {
+                     newName = newName.replace(/\.ies$/i, '.ies');
+                 } else {
+                     newName += '.ies';
+                 }
+                 iesFile.fileName = newName;
+             }
         } else if (field === 'wattage') {
             const val = parseFloat(value);
             if (!isNaN(val) && val > 0) iesFile.updateWattage(val, true);
