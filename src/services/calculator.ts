@@ -41,7 +41,7 @@ export class PhotometricCalculator {
   scaleByWattage(data: PhotometricData, newWattage: number): ScalingResult {
     const wattageRatio = truncateToThreeDecimals(newWattage / data.inputWatts);
     const scaled = { ...data };
-    
+    console.log('scaleByWattage', data.inputWatts, newWattage, wattageRatio);
     // Scale lumens proportionally
     scaled.lumensPerLamp = truncateToThreeDecimals(data.lumensPerLamp * wattageRatio);
     scaled.totalLumens = truncateToThreeDecimals(scaled.lumensPerLamp * scaled.numberOfLamps);
@@ -67,7 +67,7 @@ export class PhotometricCalculator {
   scaleByLumens(data: PhotometricData, newTotalLumens: number, adjustWattage: boolean = false): ScalingResult {
     const lumensRatio = truncateToThreeDecimals(newTotalLumens / data.totalLumens);
     const scaled = { ...data };
-    
+    console.log('scaleByLumens', data.totalLumens, newTotalLumens, lumensRatio);
     // Scale lumens
     scaled.totalLumens = truncateToThreeDecimals(newTotalLumens);
     scaled.lumensPerLamp = truncateToThreeDecimals(newTotalLumens / data.numberOfLamps);

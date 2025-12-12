@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { CSVRow } from '../../services/csvService';
 import type { ExtendedCSVRow } from '../../hooks/useCSVData';
 
@@ -18,7 +18,7 @@ export function CSVEditorTable({
   onUnitChange,
   onBulkEdit
 }: CSVEditorTableProps) {
-  const [editingCell, setEditingCell] = useState<{row: number, field: keyof CSVRow} | null>(null);
+  const [editingCell, setEditingCell] = useState<{row: number, field: keyof CSVRow, value: string} | null>(null);
   
   const getColumnDisplayName = (header: keyof CSVRow): string => {
     let displayHeader = header.replace(/([A-Z])/g, ' $1').trim();
@@ -32,6 +32,23 @@ export function CSVEditorTable({
       displayHeader = 'Lumens (lm)';
     }
     return displayHeader;
+  };
+
+  const commitEdit = () => {
+    if (editingCell) {
+        // Only trigger update if value actually changed or it's empty vs undefined
+        // Note: We need to compare with the original row value to avoid redundant updates
+        // But we don't have easy access to the specific row data here without finding it again or passing it.
+        // Actually we do have csvData.
+        
+        const currentRow = csvData[editingCell.row];
+        const currentValue = currentRow[editingCell.field] || '';
+        
+        if (editingCell.value !== currentValue) {
+            onCellUpdate(editingCell.row, editingCell.field, editingCell.value);
+        }
+        setEditingCell(null);
+    }
   };
   
   return (
@@ -72,17 +89,16 @@ export function CSVEditorTable({
                 const lumensChanged = isLumens && row.originalLumens !== undefined && 
                   Math.abs(parseFloat(row.lumens || '0') - row.originalLumens) > 0.1;
                 
+                const isEditing = editingCell?.row === rowIndex && editingCell?.field === header;
+
                 return (
                   <td key={header} className={`px-4 py-2 ${(wattageChanged || lumensChanged) ? 'bg-blue-50' : ''}`}>
-                    {editingCell?.row === rowIndex && editingCell?.field === header ? (
+                    {isEditing ? (
                       header === 'nearField' ? (
                         <select
-                          value={row[header] || ''}
-                          onChange={(e) => {
-                            onCellUpdate(rowIndex, header, e.target.value);
-                            setEditingCell(null);
-                          }}
-                          onBlur={() => setEditingCell(null)}
+                          value={editingCell.value}
+                          onChange={(e) => setEditingCell({...editingCell, value: e.target.value})}
+                          onBlur={commitEdit}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                           autoFocus
                         >
@@ -95,12 +111,12 @@ export function CSVEditorTable({
                         <input
                           type="number"
                           step="any"
-                          value={row[header] || ''}
-                          onChange={(e) => onCellUpdate(rowIndex, header, e.target.value)}
-                          onBlur={() => setEditingCell(null)}
+                          value={editingCell.value}
+                          onChange={(e) => setEditingCell({...editingCell, value: e.target.value})}
+                          onBlur={commitEdit}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
-                              setEditingCell(null);
+                              commitEdit();
                             }
                           }}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
@@ -109,12 +125,12 @@ export function CSVEditorTable({
                       ) : (
                         <input
                           type="text"
-                          value={row[header] || ''}
-                          onChange={(e) => onCellUpdate(rowIndex, header, e.target.value)}
-                          onBlur={() => setEditingCell(null)}
+                          value={editingCell.value}
+                          onChange={(e) => setEditingCell({...editingCell, value: e.target.value})}
+                          onBlur={commitEdit}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
-                              setEditingCell(null);
+                              commitEdit();
                             }
                           }}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
@@ -123,7 +139,7 @@ export function CSVEditorTable({
                       )
                     ) : (
                       <div
-                        onClick={() => setEditingCell({row: rowIndex, field: header})}
+                        onClick={() => setEditingCell({row: rowIndex, field: header, value: row[header] || ''})}
                         className={`px-2 py-1 min-h-[28px] cursor-pointer hover:bg-gray-50 rounded text-sm ${
                           wattageChanged || lumensChanged ? 'font-medium text-blue-700' : ''
                         }`}
