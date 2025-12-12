@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Upload, Download, Settings, ArrowLeftRight, Gauge } from 'lucide-react';
-import { useIESFileStore, type BatchFile } from '../store/iesFileStore';
+import { useIESFileStore } from '../store/iesFileStore';
 import type { CSVRow } from '../services/csvService';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';

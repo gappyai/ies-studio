@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { CSVRow } from '../../services/csvService';
 import type { ExtendedCSVRow } from '../../hooks/useCSVData';
 
