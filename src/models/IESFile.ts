@@ -148,6 +148,17 @@ export class IESFile {
   }
 
   write(): string {
-    return iesGenerator.generate(this._data);
+    // Create a copy of the data to modify metadata without affecting the original
+    const dataToWrite = { 
+      ...this._data,
+      metadata: { ...this._data.metadata }
+    };
+
+    // If LUMCAT is present, set LUMINAIRE (luminaireDescription) to match it
+    if (dataToWrite.metadata.luminaireCatalogNumber && dataToWrite.metadata.luminaireCatalogNumber.trim() !== '') {
+      dataToWrite.metadata.luminaireDescription = dataToWrite.metadata.luminaireCatalogNumber;
+    }
+
+    return iesGenerator.generate(dataToWrite);
   }
 }
